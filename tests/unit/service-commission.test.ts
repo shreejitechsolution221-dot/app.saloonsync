@@ -1,0 +1,12 @@
+import {beforeEach,expect,it,vi} from 'vitest';
+vi.mock('@/lib/db',()=>({db:{}}));
+import {completionEffects} from '@/lib/operations/bookings';
+import {commissionRate,optionalCommissionRate} from '@/lib/salon/commission';
+const profile=vi.fn(),create=vi.fn();const tx={salon:{findUniqueOrThrow:async()=>({settings:{}})},staffProfile:{findFirst:profile},commissionEntry:{create}};
+const row={id:'appointment',salonId:'salon',branchId:'branch',assignedUserId:'staff',pricePaise:100000,stockRecipe:[],commissionEligible:true,salonCustomerId:'customer'};
+beforeEach(()=>{profile.mockResolvedValue({commissionBps:2000});create.mockResolvedValue({});});
+it('uses a per-service percentage instead of the staff default for this customer’s service',async()=>{await completionEffects(tx as never,{salonId:'salon',user:{id:'operator'}},{...row,commissionBps:1500});expect(create).toHaveBeenCalledWith({data:expect.objectContaining({appointmentId:'appointment',basePaise:100000,rateBps:1500,amountPaise:15000,userId:'staff'})});});
+it('falls back to the staff default when no service rate was booked',async()=>{await completionEffects(tx as never,{salonId:'salon',user:{id:'operator'}},{...row,commissionBps:null});expect(create).toHaveBeenCalledWith({data:expect.objectContaining({rateBps:2000,amountPaise:20000})});});
+it('treats a service rate of zero as an override, rather than falling back',async()=>{await completionEffects(tx as never,{salonId:'salon',user:{id:'operator'}},{...row,commissionBps:0});expect(create).not.toHaveBeenCalled();expect(commissionRate(0,2000)).toBe(0);});
+it('can pay a service rate without a staff default and respects the eligibility switch',async()=>{profile.mockResolvedValue(null);await completionEffects(tx as never,{salonId:'salon',user:{id:'operator'}},{...row,commissionBps:1500});expect(create).toHaveBeenCalledTimes(1);create.mockClear();await completionEffects(tx as never,{salonId:'salon',user:{id:'operator'}},{...row,commissionBps:1500,commissionEligible:false});expect(create).not.toHaveBeenCalled();});
+it('validates optional service percentages and preserves decimal precision',()=>{expect(optionalCommissionRate(null)).toBeNull();expect(optionalCommissionRate('')).toBeNull();expect(optionalCommissionRate('12.50')).toBe(1250);expect(optionalCommissionRate('0')).toBe(0);for(const rate of ['101','-1','12.345','1e2','invalid'])expect(()=>optionalCommissionRate(rate)).toThrow();});

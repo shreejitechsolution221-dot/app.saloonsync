@@ -1,0 +1,7 @@
+{
+  "scopeEquivalent": true,
+  "samples": 5,
+  "sequentialMedianMs": 498,
+  "parallelMedianMs": 219,
+  "note": "Warm profile + workspace database reads only. Excludes Supabase verification, page queries, rendering and browser navigation; not a load test."
+}

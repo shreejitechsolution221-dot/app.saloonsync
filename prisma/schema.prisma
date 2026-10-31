@@ -1,0 +1,825 @@
+generator client {
+  provider = "prisma-client"
+  output = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  schemas = ["app"]
+}
+
+model User {
+  id String @id @db.Uuid
+  displayName String
+  mobileNumber String?
+  salonRegistrationName String?
+  disabledAt DateTime? @db.Timestamptz
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+  memberships SalonMembership[]
+  privileges PlatformPrivilege[] @relation("privilegeUser")
+  grants PlatformPrivilege[] @relation("grantor")
+  customer CustomerProfile?
+  salonCustomers SalonCustomer[]
+  invitations Invitation[] @relation("inviter")
+  acceptedInvitations Invitation[] @relation("acceptor")
+  consents ConsentRecord[]
+  events AuditEvent[]
+  bookings Appointment[]
+  @@schema("app")
+}
+
+model Salon {
+  id String @id @default(uuid()) @db.Uuid
+  name String
+  slug String @unique
+  status String @default("active")
+  onboardingKey String @unique
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+  settings Json @default("{}")
+  branches Branch[]
+  memberships SalonMembership[]
+  customers SalonCustomer[]
+  subscription SalonSubscription?
+  invitations Invitation[]
+  events AuditEvent[]
+  bookings Appointment[]
+  services Service[]
+  products Product[]
+  invoices Invoice[]
+  @@schema("app")
+}
+
+model Branch {
+  address String @default("")
+  phone String @default("")
+  id String @id @default(uuid()) @db.Uuid
+  salonId String @db.Uuid
+  salon Salon @relation(fields: [salonId], references: [id], onDelete: Restrict)
+  name String
+  status String @default("active")
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+  members MembershipBranchAccess[]
+  invitations InvitationBranchAccess[]
+  events AuditEvent[]
+  bookings Appointment[]
+  @@unique([id, salonId])
+  @@index([salonId, status])
+  @@schema("app")
+}
+
+model SalonMembership {
+  id String @id @default(uuid()) @db.Uuid
+  salonId String @db.Uuid
+  userId String @db.Uuid
+  salon Salon @relation(fields: [salonId], references: [id], onDelete: Restrict)
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  role String
+  branchScope String @default("all")
+  status String @default("active")
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+  branches MembershipBranchAccess[]
+  assignments Appointment[]
+  @@unique([salonId, userId])
+  @@unique([id, salonId])
+  @@index([userId, status])
+  @@index([salonId, status, role])
+  @@schema("app")
+}
+
+model MembershipBranchAccess {
+  membershipId String @db.Uuid
+  salonId String @db.Uuid
+  branchId String @db.Uuid
+  membership SalonMembership @relation(fields: [membershipId, salonId], references: [id, salonId], onDelete: Cascade)
+  branch Branch @relation(fields: [branchId, salonId], references: [id, salonId], onDelete: Restrict)
+  @@id([membershipId, branchId])
+  @@index([branchId, salonId])
+  @@schema("app")
+}
+
+model PlatformPrivilege {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  privilege String
+  status String @default("active")
+  grantedBy String? @db.Uuid
+  grantedAt DateTime @default(now()) @db.Timestamptz
+  revokedAt DateTime? @db.Timestamptz
+  user User @relation("privilegeUser", fields: [userId], references: [id], onDelete: Restrict)
+  grantor User? @relation("grantor", fields: [grantedBy], references: [id], onDelete: Restrict)
+  @@unique([userId, privilege])
+  @@index([userId, status])
+  @@index([grantedBy])
+  @@schema("app")
+}
+
+model CustomerProfile {
+  userId String @id @db.Uuid
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  phone String?
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+  @@schema("app")
+}
+
+model SalonCustomer {
+  originBranchId String? @db.Uuid
+  birthday DateTime? @db.Date
+  tags String[] @default([])
+  whatsappConsentAt DateTime? @db.Timestamptz
+  marketingConsentAt DateTime? @db.Timestamptz
+  photoConsentAt DateTime? @db.Timestamptz
+  id String @id @default(uuid()) @db.Uuid
+  salonId String @db.Uuid
+  userId String? @db.Uuid
+  displayName String
+  notes String?
+  phone String?
+  bookings Appointment[]
+  salon Salon @relation(fields: [salonId], references: [id], onDelete: Restrict)
+  user User? @relation(fields: [userId], references: [id], onDelete: Restrict)
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+  @@unique([id, salonId])
+  @@index([salonId, userId])
+  @@index([salonId, displayName])
+  @@index([salonId,originBranchId])
+  @@index([userId])
+  @@schema("app")
+}
+
+model Invitation {
+  staffProfileId String? @db.Uuid
+  id String @id @default(uuid()) @db.Uuid
+  salonId String @db.Uuid
+  intendedEmail String
+  role String
+  branchScope String
+  tokenHash String @unique
+  invitedBy String @db.Uuid
+  expiresAt DateTime @db.Timestamptz
+  acceptedAt DateTime? @db.Timestamptz
+  revokedAt DateTime? @db.Timestamptz
+  acceptedBy String? @db.Uuid
+  createdAt DateTime @default(now()) @db.Timestamptz
+  salon Salon @relation(fields: [salonId], references: [id], onDelete: Restrict)
+  inviter User @relation("inviter", fields: [invitedBy], references: [id], onDelete: Restrict)
+  acceptor User? @relation("acceptor", fields: [acceptedBy], references: [id], onDelete: Restrict)
+  branches InvitationBranchAccess[]
+  @@unique([id, salonId])
+  @@index([salonId, intendedEmail, expiresAt])
+  @@index([staffProfileId, salonId])
+  @@index([invitedBy])
+  @@index([acceptedBy])
+  @@schema("app")
+}
+
+model InvitationBranchAccess {
+  invitationId String @db.Uuid
+  salonId String @db.Uuid
+  branchId String @db.Uuid
+  invitation Invitation @relation(fields: [invitationId, salonId], references: [id, salonId], onDelete: Cascade)
+  branch Branch @relation(fields: [branchId, salonId], references: [id, salonId], onDelete: Restrict)
+  @@id([invitationId, branchId])
+  @@index([branchId, salonId])
+  @@schema("app")
+}
+
+model ConsentRecord {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  documentType String
+  documentVersion String
+  purpose String
+  acceptedAt DateTime @default(now()) @db.Timestamptz
+  withdrawnAt DateTime? @db.Timestamptz
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  @@unique([userId, documentType, documentVersion, purpose])
+  @@schema("app")
+}
+
+model AuditEvent {
+  id String @id @default(uuid()) @db.Uuid
+  actorUserId String? @db.Uuid
+  salonId String? @db.Uuid
+  branchId String? @db.Uuid
+  action String
+  targetType String
+  targetId String
+  outcome String
+  occurredAt DateTime @default(now()) @db.Timestamptz
+  metadata Json?
+  actor User? @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+  salon Salon? @relation(fields: [salonId], references: [id], onDelete: Restrict)
+  branch Branch? @relation(fields: [branchId, salonId], references: [id, salonId], onDelete: Restrict)
+  @@index([salonId, occurredAt])
+  @@index([actorUserId])
+  @@index([branchId, salonId])
+  @@schema("app")
+}
+
+model Appointment {
+  commissionBps Int?
+  feedbackTokenHash String? @unique
+  feedbackTokenExpiresAt DateTime? @db.Timestamptz
+  commissionEligible Boolean @default(false)
+  checkedInAt DateTime? @db.Timestamptz
+  completedAt DateTime? @db.Timestamptz
+  recurrenceKey String?
+  checklist String[] @default([])
+  completedSteps Int[] @default([])
+  stockRecipe Json @default("[]")
+  id String @id @default(uuid()) @db.Uuid
+  salonId String @db.Uuid
+  branchId String @db.Uuid
+  customerUserId String? @db.Uuid
+  salonCustomerId String? @db.Uuid
+  serviceName String @default("Salon visit")
+  durationMinutes Int @default(60)
+  pricePaise Int @default(0)
+  assignedUserId String? @db.Uuid
+  startsAt DateTime @db.Timestamptz
+  status String @default("confirmed")
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+  salon Salon @relation(fields: [salonId], references: [id], onDelete: Restrict)
+  branch Branch @relation(fields: [branchId, salonId], references: [id, salonId], onDelete: Restrict)
+  customer User? @relation(fields: [customerUserId], references: [id], onDelete: Restrict)
+  salonCustomer SalonCustomer? @relation(fields: [salonCustomerId, salonId], references: [id, salonId], onDelete: Restrict)
+  assignedMembership SalonMembership? @relation(fields: [salonId, assignedUserId], references: [salonId, userId], onDelete: Restrict)
+  @@unique([id, salonId])
+  @@index([salonId, branchId, startsAt])
+  @@index([branchId, salonId])
+  @@index([customerUserId, startsAt])
+  @@index([salonId, assignedUserId])
+  @@index([salonId, startsAt])
+  @@index([salonId, assignedUserId, startsAt])
+  @@index([salonId, salonCustomerId])
+  @@schema("app")
+}
+
+model Service {
+  commissionBps Int?
+  kind String @default("service")
+  checklist String[] @default([])
+  eligibleUserIds String[] @default([]) @db.Uuid
+  commissionEligible Boolean @default(false)
+  id String @id @default(uuid()) @db.Uuid
+  salonId String @db.Uuid
+  salon Salon @relation(fields: [salonId], references: [id], onDelete: Restrict)
+  name String
+  category String
+  durationMinutes Int
+  pricePaise Int
+  active Boolean @default(true)
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+  @@unique([id, salonId])
+  @@index([salonId, active])
+  @@schema("app")
+}
+
+model Product {
+  barcode String?
+  costPaise Int @default(0)
+  id String @id @default(uuid()) @db.Uuid
+  salonId String @db.Uuid
+  salon Salon @relation(fields: [salonId], references: [id], onDelete: Restrict)
+  name String
+  sku String
+  stock Int @default(0)
+  reorderAt Int @default(5)
+  pricePaise Int
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+  @@unique([id,salonId])
+  @@unique([salonId, sku])
+  @@unique([salonId, barcode])
+  @@index([salonId, name])
+  @@schema("app")
+}
+
+model Invoice {
+  salonCustomerId String? @db.Uuid
+  loyaltyPoints Int @default(0)
+  branchId String? @db.Uuid
+  basePaise Int @default(0)
+  discountPaise Int @default(0)
+  taxPaise Int @default(0)
+  taxBps Int @default(0)
+  id String @id @default(uuid()) @db.Uuid
+  salonId String @db.Uuid
+  salon Salon @relation(fields: [salonId], references: [id], onDelete: Restrict)
+  appointmentId String? @unique @db.Uuid
+  customerName String
+  serviceName String
+  totalPaise Int
+  createdAt DateTime @default(now()) @db.Timestamptz
+  payments Payment[]
+  @@unique([id, salonId])
+  @@index([salonId, createdAt])
+  @@schema("app")
+}
+
+model Payment {
+  id String @id @default(uuid()) @db.Uuid
+  salonId String @db.Uuid
+  invoiceId String @db.Uuid
+  invoice Invoice @relation(fields: [invoiceId, salonId], references: [id, salonId], onDelete: Restrict)
+  amountPaise Int
+  method String
+  recordedAt DateTime @default(now()) @db.Timestamptz
+  @@index([salonId, recordedAt])
+  @@index([invoiceId])
+  @@schema("app")
+}
+
+model RateLimit {
+  key String @id
+  count Int
+  resetsAt DateTime @db.Timestamptz
+  @@index([resetsAt])
+  @@schema("app")
+}
+
+model SalonSubscription {
+  id String @id @default(uuid()) @db.Uuid
+  salonId String @unique @db.Uuid
+  salon Salon @relation(fields: [salonId], references: [id], onDelete: Restrict)
+  planCode String
+  status String
+  currentPeriodEnd DateTime? @db.Timestamptz
+  version Int @default(1)
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+  @@index([status, currentPeriodEnd])
+  @@schema("app")
+}
+
+model EmailBlockedDomain {
+  domain String @id
+  sourceRevision String
+  @@schema("app")
+}
+
+model StaffProfile {
+  id String @id @default(uuid()) @db.Uuid
+  salonId String @db.Uuid
+  displayName String
+  userId String? @db.Uuid
+  jobTitle String
+  commissionBps Int @default(0)
+  active Boolean @default(true)
+  @@unique([salonId,userId])
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+  @@unique([id,salonId])
+  @@schema("app")
+}
+
+model Expense {
+  receiptPath String?
+  id String @id @default(uuid()) @db.Uuid
+  salonId String @db.Uuid
+  branchId String @db.Uuid
+  submittedBy String @db.Uuid
+  approvedBy String? @db.Uuid
+  category String
+  amountPaise Int
+  method String
+  note String
+  receiptReference String @default("")
+  incurredAt DateTime @db.Timestamptz
+  status String @default("pending")
+  @@index([salonId,branchId,incurredAt])
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+  @@unique([id,salonId])
+  @@schema("app")
+}
+
+model CashSession {
+  id String @id @default(uuid()) @db.Uuid
+  salonId String @db.Uuid
+  branchId String @db.Uuid
+  openedBy String @db.Uuid
+  businessDate DateTime @db.Date
+  openingPaise Int
+  countedPaise Int?
+  expectedPaise Int?
+  closedAt DateTime? @db.Timestamptz
+  closedBy String? @db.Uuid
+  note String @default("")
+  @@unique([salonId,branchId,businessDate])
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+  @@unique([id,salonId])
+  @@schema("app")
+}
+
+model LeaveRequest {
+  id String @id @default(uuid()) @db.Uuid
+  salonId String @db.Uuid
+  branchId String @db.Uuid
+  userId String @db.Uuid
+  startsAt DateTime @db.Timestamptz
+  endsAt DateTime @db.Timestamptz
+  reason String
+  status String @default("pending")
+  reviewedBy String? @db.Uuid
+  reviewedAt DateTime? @db.Timestamptz
+  @@index([salonId,userId,startsAt,endsAt])
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+  @@unique([id,salonId])
+  @@schema("app")
+}
+
+model Attendance {
+  id String @id @default(uuid()) @db.Uuid
+  salonId String @db.Uuid
+  branchId String @db.Uuid
+  userId String @db.Uuid
+  clockedInAt DateTime @default(now()) @db.Timestamptz
+  clockedOutAt DateTime? @db.Timestamptz
+  breakStartedAt DateTime? @db.Timestamptz
+  breakMinutes Int @default(0)
+  @@index([salonId,userId,clockedInAt])
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+  @@unique([id,salonId])
+  @@schema("app")
+}
+
+model Shift {
+  cancelledAt DateTime? @db.Timestamptz
+  id String @id @default(uuid()) @db.Uuid
+  salonId String @db.Uuid
+  branchId String @db.Uuid
+  userId String @db.Uuid
+  startsAt DateTime @db.Timestamptz
+  endsAt DateTime @db.Timestamptz
+  @@index([salonId,branchId,startsAt])
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+  @@unique([id,salonId])
+  @@schema("app")
+}
+
+model RevenueTarget {
+  id String @id @default(uuid()) @db.Uuid
+  salonId String @db.Uuid
+  branchId String @db.Uuid
+  period String
+  startsOn DateTime @db.Date
+  amountPaise Int
+  @@unique([salonId,branchId,period,startsOn])
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+  @@unique([id,salonId])
+  @@schema("app")
+}
+
+model TaskTemplate {
+  id String @id @default(uuid()) @db.Uuid
+  salonId String @db.Uuid
+  title String
+  category String
+  active Boolean @default(true)
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+  @@unique([id,salonId])
+  @@schema("app")
+}
+
+model DailyTask {
+  id String @id @default(uuid()) @db.Uuid
+  salonId String @db.Uuid
+  branchId String @db.Uuid
+  templateId String @db.Uuid
+  businessDate DateTime @db.Date
+  completedBy String? @db.Uuid
+  completedAt DateTime? @db.Timestamptz
+  @@unique([salonId,branchId,templateId,businessDate])
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+  @@unique([id,salonId])
+  @@schema("app")
+}
+
+model CommissionEntry {
+  id String @id @default(uuid()) @db.Uuid
+  salonId String @db.Uuid
+  branchId String @db.Uuid
+  appointmentId String @unique @db.Uuid
+  userId String @db.Uuid
+  basePaise Int
+  rateBps Int
+  amountPaise Int
+  @@index([salonId,userId,createdAt])
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+  @@unique([id,salonId])
+  @@schema("app")
+}
+
+model ServiceProduct {
+  id String @id @default(uuid()) @db.Uuid
+  salonId String @db.Uuid
+  serviceId String @db.Uuid
+  productId String @db.Uuid
+  quantity Int
+  @@unique([salonId,serviceId,productId])
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+  @@unique([id,salonId])
+  @@schema("app")
+}
+
+model StockMovement {
+  id String @id @default(uuid()) @db.Uuid
+  salonId String @db.Uuid
+  branchId String? @db.Uuid
+  productId String @db.Uuid
+  appointmentId String? @db.Uuid
+  purchaseOrderId String? @db.Uuid
+  actorUserId String @db.Uuid
+  quantity Int
+  reason String
+  @@unique([appointmentId,productId])
+  @@unique([purchaseOrderId,productId])
+  @@index([salonId,productId,createdAt])
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+  @@unique([id,salonId])
+  @@schema("app")
+}
+
+model Supplier {
+  id String @id @default(uuid()) @db.Uuid
+  salonId String @db.Uuid
+  name String
+  phone String
+  email String
+  @@index([salonId,name])
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+  @@unique([id,salonId])
+  @@schema("app")
+}
+
+model PurchaseOrder {
+  id String @id @default(uuid()) @db.Uuid
+  salonId String @db.Uuid
+  branchId String @db.Uuid
+  supplierId String @db.Uuid
+  requestedBy String @db.Uuid
+  approvedBy String? @db.Uuid
+  receivedAt DateTime? @db.Timestamptz
+  status String @default("pending")
+  note String @default("")
+  @@index([salonId,branchId,status])
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+  @@unique([id,salonId])
+  @@schema("app")
+}
+
+model PurchaseLine {
+  id String @id @default(uuid()) @db.Uuid
+  salonId String @db.Uuid
+  orderId String @db.Uuid
+  productId String @db.Uuid
+  quantity Int
+  unitCostPaise Int
+  @@unique([salonId,orderId,productId])
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+  @@unique([id,salonId])
+  @@schema("app")
+}
+
+model Refund {
+  id String @id @default(uuid()) @db.Uuid
+  salonId String @db.Uuid
+  branchId String @db.Uuid
+  invoiceId String @db.Uuid
+  amountPaise Int
+  method String
+  reason String
+  approvedBy String @db.Uuid
+  @@index([salonId,invoiceId])
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+  @@unique([id,salonId])
+  @@schema("app")
+}
+
+model InvoiceLine {
+  productId String? @db.Uuid
+  unitCostPaise Int @default(0)
+  id String @id @default(uuid()) @db.Uuid
+  salonId String @db.Uuid
+  invoiceId String @db.Uuid
+  description String
+  quantity Int @default(1)
+  unitPricePaise Int
+  @@index([salonId,invoiceId])
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+  @@unique([id,salonId])
+  @@schema("app")
+}
+
+model Feedback {
+  id String @id @default(uuid()) @db.Uuid
+  salonId String @db.Uuid
+  appointmentId String @unique @db.Uuid
+  customerUserId String? @db.Uuid
+  rating Int
+  comment String
+  @@index([salonId,createdAt])
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+  @@unique([id,salonId])
+  @@schema("app")
+}
+
+model PortfolioPhoto {
+  id String @id @default(uuid()) @db.Uuid
+  salonId String @db.Uuid
+  customerId String @db.Uuid
+  appointmentId String? @db.Uuid
+  objectPath String @unique
+  kind String
+  consentedAt DateTime @db.Timestamptz
+  uploadedBy String @db.Uuid
+  caption String @default("")
+  @@index([salonId,customerId])
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+  @@unique([id,salonId])
+  @@schema("app")
+}
+
+model Campaign {
+  id String @id @default(uuid()) @db.Uuid
+  salonId String @db.Uuid
+  title String
+  kind String
+  message String
+  status String @default("draft")
+  createdBy String @db.Uuid
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+  @@unique([id,salonId])
+  @@schema("app")
+}
+
+model MessageJob {
+  id String @id @default(uuid()) @db.Uuid
+  salonId String @db.Uuid
+  customerId String @db.Uuid
+  appointmentId String? @db.Uuid
+  campaignId String? @db.Uuid
+  kind String
+  status String @default("queued")
+  attempts Int @default(0)
+  nextAttemptAt DateTime @default(now()) @db.Timestamptz
+  providerMessageId String?
+  lastError String?
+  dedupeKey String @unique
+  @@index([status,nextAttemptAt])
+  @@index([salonId,createdAt])
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+  @@unique([id,salonId])
+  @@schema("app")
+}
+
+model Offer {
+  id String @id @default(uuid()) @db.Uuid
+  salonId String @db.Uuid
+  code String
+  name String
+  kind String
+  value Int
+  expiresAt DateTime @db.Timestamptz
+  active Boolean @default(true)
+  @@unique([salonId,code])
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+  @@unique([id,salonId])
+  @@schema("app")
+}
+
+model LoyaltyAccount {
+  id String @id @default(uuid()) @db.Uuid
+  salonId String @db.Uuid
+  customerId String @db.Uuid
+  points Int @default(0)
+  membershipName String @default("")
+  referralCode String
+  @@unique([salonId,customerId])
+  @@unique([salonId,referralCode])
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+  @@unique([id,salonId])
+  @@schema("app")
+}
+
+model LoyaltyEntry {
+  id String @id @default(uuid()) @db.Uuid
+  salonId String @db.Uuid
+  customerId String @db.Uuid
+  points Int
+  reason String
+  actorUserId String @db.Uuid
+  @@index([salonId,customerId,createdAt])
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+  @@unique([id,salonId])
+  @@schema("app")
+}
+
+model LoyaltyRedemption {
+  id String @id @default(uuid()) @db.Uuid
+  salonId String @db.Uuid
+  customerId String @db.Uuid
+  codeHash String @unique
+  points Int
+  expiresAt DateTime @db.Timestamptz
+  redeemedAt DateTime? @db.Timestamptz
+  invoiceId String? @unique @db.Uuid
+  createdAt DateTime @default(now()) @db.Timestamptz
+  @@index([salonId, customerId])
+  @@schema("app")
+}
+
+model GiftCard {
+  id String @id @default(uuid()) @db.Uuid
+  salonId String @db.Uuid
+  codeHash String @unique
+  lastFour String
+  initialPaise Int
+  balancePaise Int
+  expiresAt DateTime @db.Timestamptz
+  @@index([salonId,createdAt])
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+  @@unique([id,salonId])
+  @@schema("app")
+}
+
+model CalendarConnection {
+  id String @id @default(uuid()) @db.Uuid
+  salonId String @db.Uuid
+  userId String @db.Uuid
+  calendarId String
+  accessTokenEncrypted String
+  refreshTokenEncrypted String?
+  expiresAt DateTime @db.Timestamptz
+  cursorAt DateTime @default(dbgenerated("'1970-01-01 00:00:00+00'::timestamptz")) @db.Timestamptz
+  cursorId String @default("00000000-0000-0000-0000-000000000000") @db.Uuid
+  status String @default("active")
+  lastError String?
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+  @@unique([salonId,userId])
+  @@unique([id,salonId])
+  @@schema("app")
+}
+model CalendarJob {
+  id String @id @default(uuid()) @db.Uuid
+  salonId String @db.Uuid
+  connectionId String @db.Uuid
+  appointmentId String @db.Uuid
+  sourceUpdatedAt DateTime @db.Timestamptz
+  status String @default("queued")
+  attempts Int @default(0)
+  nextAttemptAt DateTime @default(now()) @db.Timestamptz
+  lastError String?
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+  @@unique([connectionId,appointmentId])
+  @@index([status,nextAttemptAt])
+  @@schema("app")
+}
+
+model LocationStock {
+ id String @id @default(uuid()) @db.Uuid
+ salonId String @db.Uuid
+ branchId String @db.Uuid
+ productId String @db.Uuid
+ stock Int @default(0)
+ createdAt DateTime @default(now()) @db.Timestamptz
+ updatedAt DateTime @updatedAt @db.Timestamptz
+ @@unique([id,salonId])
+ @@unique([salonId,branchId,productId])
+ @@index([salonId,branchId])
+ @@schema("app")
+}

@@ -1,0 +1,6 @@
+import {NextResponse} from 'next/server';
+import {z} from 'zod';
+import {salonContext} from '@/lib/salon/context';
+import {db} from '@/lib/db';
+import {privateStorage,verifyPrivateBucket} from '@/lib/operations/private-storage';
+export async function GET(_request:Request,{params}:{params:Promise<{expenseId:string}>}){try{const c=await salonContext();if(!['owner','admin','manager','accountant'].includes(c.membership.role)||c.membership.branchScope!=='all')throw new Error('Forbidden');const id=z.uuid().parse((await params).expenseId);const expense=await db.expense.findFirst({where:{id,salonId:c.salonId,branchId:{in:c.branches.map(b=>b.id)}},select:{receiptPath:true}});if(!expense?.receiptPath)throw new Error('Unavailable');const storage=privateStorage();await verifyPrivateBucket(storage);const {data,error}=await storage.client.storage.from(storage.bucket).createSignedUrl(expense.receiptPath,60);if(error||!data)throw new Error('Unavailable');return NextResponse.redirect(data.signedUrl,{headers:{'Cache-Control':'private, no-store','Referrer-Policy':'no-referrer'}});}catch{return NextResponse.json({error:'Receipt unavailable'},{status:403,headers:{'Cache-Control':'private, no-store'}});}}

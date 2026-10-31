@@ -1,0 +1,6 @@
+import {expect,it} from 'vitest';
+import {appointmentBackUrl} from '@/lib/salon/appointment-navigation';
+it('returns a directly opened visit to its India appointment date and popup',()=>{expect(appointmentBackUrl('visit','2026-10-30T20:00:00Z')).toBe('/salon/appointments?date=2026-10-31&view=day&appointment=visit');});
+it('preserves the original week or list view while overriding the popup ID',()=>{expect(appointmentBackUrl('visit','2026-10-31T04:30:00Z','/salon/appointments?date=2026-10-29&view=week&appointment=other')).toBe('/salon/appointments?date=2026-10-29&view=week&appointment=visit');});
+it('retains staff, service and time filters when returning from a visit popup',()=>{const url=appointmentBackUrl('visit','2026-10-31T04:30:00Z','/salon/appointments?date=2026-10-31&view=list&staff=unassigned&service=Haircut&from=09%3A00&to=11%3A00');expect(url).toContain('staff=unassigned');expect(url).toContain('service=Haircut');expect(url).toContain('from=09%3A00');expect(url).toContain('to=11%3A00');});
+it.each(['https://evil.example/','//evil.example/salon/appointments','/salon/settings?date=2026-01-01','/salon/appointments?date=invalid&view=invalid'])('keeps return navigation inside appointments for %s',returnTo=>{expect(appointmentBackUrl('visit','2026-10-31T04:30:00Z',returnTo)).toBe('/salon/appointments?date=2026-10-31&view=day&appointment=visit');});

@@ -1,0 +1,19 @@
+{
+  "mode": "smoke",
+  "concurrency": 1,
+  "elapsedSeconds": 10.0841998,
+  "environment": "Windows; Node 24.22.1; Next 16.4.3 production; 1 app process; health only; no business dataset; concurrent browser access checks; no warm-up",
+  "results": [
+    {
+      "scenario": "liveness",
+      "requests": 41,
+      "failures": 0,
+      "errorPercent": 0,
+      "rps": 4.065766328826607,
+      "meanMs": 38.15035365853659,
+      "p50UpperBoundMs": 25,
+      "p95UpperBoundMs": 100,
+      "p99UpperBoundMs": 400
+    }
+  ]
+}

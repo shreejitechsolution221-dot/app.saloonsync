@@ -1,0 +1,20 @@
+import {expect,it,vi} from 'vitest';
+import React from 'react';
+import {renderToStaticMarkup} from 'react-dom/server';
+const m=vi.hoisted(()=>({find:vi.fn(),context:{salonId:'salon',branches:[{id:'branch'}],operator:false,user:{id:'staff'}}}));
+vi.mock('@/lib/db',()=>({db:{appointment:{findFirst:m.find}}}));
+vi.mock('@/lib/salon/context',()=>({requireModule:async()=>m.context}));
+vi.mock('@/server/salon-actions',()=>({changeAppointment:vi.fn()}));
+vi.mock('@/server/visit-actions',()=>({completeServiceStep:vi.fn()}));
+vi.mock('@/components/salon/service-timer-refresh',()=>({ServiceTimerRefresh:()=>null}));
+vi.mock('@/components/operations/visit-portfolio',()=>({VisitPortfolio:()=>React.createElement('div',{},'Private portfolio')}));
+vi.mock('@/components/salon/shell',()=>({SalonShell:({children}:{children:React.ReactNode})=>React.createElement('main',{},children),PageHeading:({title,action}:{title:string;action:React.ReactNode})=>React.createElement('header',{},React.createElement('h1',{},title),action)}));
+vi.mock('@/components/salon/forms',()=>({ActionForm:({children,submit}:{children:React.ReactNode;submit:string})=>React.createElement('form',{},children,React.createElement('button',{},submit))}));
+import Visit from '@/app/salon/appointments/visit/[appointmentId]/page';
+const id='4222c05a-975d-4572-b09c-96c16f8d5817';
+it('renders the redesigned visit with a popup return link, checklist progress and one navigation context',async()=>{
+ m.find.mockResolvedValue({id,salonId:'salon',startsAt:new Date('2026-10-31T04:30:00Z'),status:'checked_in',serviceName:'Hair & beard',durationMinutes:60,pricePaise:50000,checklist:['Wash','Trim'],completedSteps:[0],salonCustomer:{id:'customer',displayName:'Alex',phone:'9876543210',notes:'Gentle wash',photoConsentAt:false},customer:null,branch:{name:'Main'},assignedMembership:{user:{displayName:'Jamie'}}});
+ const html=renderToStaticMarkup(await Visit({params:Promise.resolve({appointmentId:id}),searchParams:Promise.resolve({returnTo:'/salon/appointments?date=2026-10-30&view=week'})}));
+ expect(html).toContain('Back to appointment');expect(html).toContain(`appointment=${id}`);expect(html).toContain('view=week');expect(html).toContain('Service checklist progress');expect(html).toContain('1 / 2 complete');expect(html).toContain('Gentle wash');expect(html).toContain('Jamie');expect(html).not.toContain('module-tabs');
+ expect(m.find).toHaveBeenCalledWith(expect.objectContaining({where:expect.objectContaining({salonId:'salon',assignedUserId:'staff',branchId:{in:['branch']}})}));
+});

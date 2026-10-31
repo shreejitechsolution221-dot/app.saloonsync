@@ -1,0 +1,8 @@
+'use client';
+import {useState} from 'react';
+type Member={id:string;name:string;role:string;locations:string[]};
+export function TeamRoster({members}:{members:Member[]}){
+ const [query,setQuery]=useState('');const [role,setRole]=useState('');const roles=[...new Set(members.map(member=>member.role))].sort();
+ const visible=members.filter(member=>(!role||member.role===role)&&`${member.name} ${member.locations.join(' ')}`.toLowerCase().includes(query.toLowerCase()));
+ return <><div className="team-roster-toolbar"><label className="service-catalog-search"><span aria-hidden="true">⌕</span><input type="search" aria-label="Search team" placeholder="Search people or locations…" value={query} onChange={e=>setQuery(e.target.value)}/></label><select aria-label="Filter team role" value={role} onChange={e=>setRole(e.target.value)}><option value="">All roles</option>{roles.map(value=><option key={value} value={value}>{value}</option>)}</select><span role="status">{visible.length} people</span></div><div className="team-content-scroll"><div className="team-roster-grid">{visible.map((member,index)=><article className="team-person-card" key={member.id}><div className="team-person-top"><span className={`staff-avatar tone-${index%4}`}>{member.name.split(' ').map(n=>n[0]).slice(0,2).join('')}</span><span className="team-active-dot">Active</span></div><h2>{member.name}</h2><span className="state-pill">{member.role}</span><div className="team-person-location"><small>WORKING LOCATIONS</small><p>{member.locations.join(' · ')||'No location assigned'}</p></div></article>)}</div>{!visible.length&&<div className="customer-empty-state"><span>✧</span><h3>No matching teammates.</h3><p>Try another name, location or role.</p></div>}</div></>;
+}

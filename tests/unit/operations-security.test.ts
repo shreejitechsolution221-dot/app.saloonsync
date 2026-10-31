@@ -1,0 +1,12 @@
+import {afterEach,expect,it,vi} from 'vitest';
+import {csvCell} from '@/lib/operations/csv';
+import {basisPoints} from '@/lib/operations/calculations';
+import {settingsSchema,localTime} from '@/lib/operations/shared';
+import {calendarConfiguration,encryptToken,decryptToken} from '@/lib/operations/calendar-tokens';
+afterEach(()=>vi.unstubAllEnvs());
+it('uses human percentages with bounded, exact basis-point storage',()=>{expect(basisPoints('18')).toBe(1800);expect(basisPoints('2.75')).toBe(275);expect(()=>basisPoints('100.01')).toThrow();expect(()=>basisPoints('0.001')).toThrow();});
+it('protects CSV cells from leading whitespace and formula injection',()=>{for(const value of ['=HYPERLINK("bad")',' \t=1+1','+cmd','@SUM(A1)','-2+3'])expect(csvCell(value)).toMatch(/^"'/);expect(csvCell(-123)).toBe('"-123"');expect(csvCell('The "Studio"')).toBe('"The ""Studio"""');});
+it('rejects normalized invalid dates instead of silently changing their day',()=>{expect(()=>localTime('2027-02-31T10:00')).toThrow();expect(localTime('2027-02-28T10:00').toISOString()).toBe('2027-02-28T04:30:00.000Z');});
+it('requires sensible business rules and defaults automation off',()=>{const defaults=settingsSchema.parse({});expect(defaults.automatedMessages).toBe(false);expect(defaults.automaticStockUsage).toBe(false);expect(settingsSchema.safeParse({openingHour:20,closingHour:9}).success).toBe(false);expect(settingsSchema.safeParse({taxBps:5000}).success).toBe(false);});
+it('encrypts calendar credentials with randomized authenticated encryption',()=>{vi.stubEnv('GOOGLE_CALENDAR_CLIENT_ID','test-client');vi.stubEnv('GOOGLE_CALENDAR_CLIENT_SECRET','test-secret');vi.stubEnv('CALENDAR_TOKEN_ENCRYPTION_KEY',Buffer.alloc(32,7).toString('base64'));vi.stubEnv('APP_ORIGIN','http://localhost:3000');const a=encryptToken('test-token'),b=encryptToken('test-token');expect(a).not.toBe(b);expect(a).not.toContain('test-token');expect(decryptToken(a)).toBe('test-token');const bytes=Buffer.from(a,'base64');bytes[15]^=1;expect(()=>decryptToken(bytes.toString('base64'))).toThrow();});
+it('does not accept a missing or malformed token encryption key',()=>{vi.stubEnv('CALENDAR_TOKEN_ENCRYPTION_KEY','short');expect(calendarConfiguration()).toBeNull();expect(()=>encryptToken('value')).toThrow();});

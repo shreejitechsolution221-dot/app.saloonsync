@@ -1,0 +1,6 @@
+'use server';
+import {db} from '@/lib/db';
+import {perform,id,audit,DomainError} from '@/lib/operations/shared';
+import type {FormState} from './auth-actions';
+export async function disconnectCalendar(_:FormState,f:FormData){return perform(async c=>{await db.$transaction(async tx=>{const row=await tx.calendarConnection.findUnique({where:{salonId_userId:{salonId:c.salonId,userId:c.user.id}}});if(!row)throw new DomainError('No calendar connection exists.');await tx.calendarConnection.update({where:{id:row.id},data:{status:'disabled',accessTokenEncrypted:'',refreshTokenEncrypted:null}});await audit(tx,c,'calendar.disconnected',row.id);});});}
+export async function retryCalendarJob(_:FormState,f:FormData){return perform(async c=>{const jobId=id(f);const connection=await db.calendarConnection.findUnique({where:{salonId_userId:{salonId:c.salonId,userId:c.user.id}}});if(!connection||connection.status!=='active')throw new DomainError('Connect your calendar first.');const result=await db.calendarJob.updateMany({where:{id:jobId,salonId:c.salonId,connectionId:connection.id,status:'failed'},data:{status:'queued',attempts:0,nextAttemptAt:new Date(),lastError:null}});if(!result.count)throw new DomainError('This failed sync job is unavailable.');});}

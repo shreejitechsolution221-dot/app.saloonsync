@@ -1,0 +1,20 @@
+import { expect, it, vi } from 'vitest';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+const m = vi.hoisted(() => ({ list: vi.fn() }));
+vi.mock('@/lib/db', () => ({ db: { $queryRaw: m.list } }));
+vi.mock('@/lib/auth/page-guard', () => ({ guard: async () => ({ id: 'user-a', displayName: 'Member' }) }));
+vi.mock('@/lib/authorization/server', () => ({ requireAuthenticatedUser: vi.fn() }));
+vi.mock('@/server/workspaces', () => ({ selectWorkspace: vi.fn() }));
+vi.mock('@/components/dashboard', () => ({ Dashboard: ({ children }: { children: React.ReactNode }) => React.createElement('main', {}, children) }));
+import SelectWorkspace from '@/app/salon/select-workspace/page';
+it('distinguishes salons by permitted location and removes the requested shortcuts', async () => {
+  m.list.mockResolvedValue([{ id: 'm', salonId: 's', status: 'active', branchScope: 'all', role: 'owner', salon: { name: 'Studio', status: 'active', branches: [{ id: 'b', name: 'Central', address: '12 Market Street' }] } }]);
+  const html = renderToStaticMarkup(await SelectWorkspace());
+  expect(html).toContain('Central'); expect(html).toContain('12 Market Street');
+  expect(html).not.toContain('Use an invitation'); expect(html).not.toContain('Open customer space');
+  const query = m.list.mock.calls.at(-1)![0];
+  expect(query.values).toEqual(['user-a']); expect(query.text).not.toContain('user-a');
+  expect(query.text).toContain('LIMIT 100');expect(query.text).toContain('LIMIT 50');
+  expect(query.text).toContain('g."membershipId" = m.id');expect(query.text).toContain('g."salonId" = m."salonId"');
+});

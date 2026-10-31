@@ -1,0 +1,8 @@
+'use client';
+import {useEffect,useId,useRef,type ReactNode} from 'react';
+export function SidePanel({label,title,description,children,secondary=false,eyebrow='CUSTOMER WORKSPACE',id}:{label:string;title:string;description?:string;children:ReactNode;secondary?:boolean;eyebrow?:string;id?:string}){
+ const panel=useRef<HTMLDialogElement>(null);const heading=useId();
+ function open(){if(!panel.current?.open)panel.current?.showModal();panel.current?.querySelector<HTMLInputElement|HTMLSelectElement|HTMLTextAreaElement>('input:not([type="hidden"]),select,textarea')?.focus();}
+ useEffect(()=>{if(!id)return;const onHash=()=>{if(window.location.hash==='#'+id&&!panel.current?.open)panel.current?.showModal();};onHash();window.addEventListener('hashchange',onHash);return()=>window.removeEventListener('hashchange',onHash);},[id]);
+ return <><button id={id} type="button" className={secondary?'secondary':'primary'} onClick={open}>{label}</button><dialog className="studio-dialog side-panel" ref={panel} aria-labelledby={heading} onClose={()=>{if(id&&window.location.hash==='#'+id)window.history.replaceState(window.history.state,'',window.location.pathname+window.location.search);}} onClick={event=>{if(event.target===panel.current&&event.clientX<panel.current.getBoundingClientRect().left)panel.current.close();}}><header className="side-panel-heading"><div><p className="eyebrow">{eyebrow}</p><h2 id={heading}>{title}</h2>{description&&<p>{description}</p>}</div><button type="button" aria-label="Close panel" onClick={()=>panel.current?.close()}>×</button></header><div className="side-panel-content">{children}</div></dialog></>;
+}

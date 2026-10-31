@@ -1,0 +1,5 @@
+import {expect,it} from 'vitest';
+import {whatsappReminderUrl,emailReminderUrl} from '@/lib/salon/customer-reminders';
+it('builds an editable WhatsApp reminder with safe encoded text and India local-number support',()=>{const link=whatsappReminderUrl('98765 43210','Hello & welcome\nBook a visit?');expect(link).toContain('https://wa.me/919876543210?');expect(new URL(link!).searchParams.get('text')).toBe('Hello & welcome\nBook a visit?');});
+it('rejects invalid phone and email recipients',()=>{expect(whatsappReminderUrl('123','Hi')).toBeNull();expect(emailReminderUrl('not-email','Reminder','Hi')).toBeNull();expect(emailReminderUrl('x@example.com\nbcc:y@example.com','Hi','Hi')).toBeNull();});
+it('opens a mail draft without sending or storing the recipient',()=>{const link=emailReminderUrl('alex@example.com','Visit at Micasa','Hi Alex,\nTime for your next visit?');expect(link).toContain('mailto:alex%40example.com?');const params=new URLSearchParams(link!.split('?')[1]);expect(params.get('subject')).toBe('Visit at Micasa');expect(params.get('body')).toBe('Hi Alex,\nTime for your next visit?');});

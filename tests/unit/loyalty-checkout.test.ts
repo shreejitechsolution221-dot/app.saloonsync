@@ -1,0 +1,20 @@
+import {beforeEach,expect,it,vi} from 'vitest';
+const m=vi.hoisted(()=>({c:{user:{id:'actor'},salonId:'salon',membership:{role:'owner',branchScope:'all'},branches:[{id:'11111111-1111-4111-8111-111111111111'}],availableBranches:[]},tx:{$queryRaw:vi.fn(),salonCustomer:{findFirst:vi.fn()},loyaltyAccount:{findUnique:vi.fn(),upsert:vi.fn(),update:vi.fn()},loyaltyEntry:{create:vi.fn()},loyaltyRedemption:{create:vi.fn(),findFirst:vi.fn()},auditEvent:{create:vi.fn()}}}));
+vi.mock('@/lib/salon/context',()=>({salonContext:async()=>m.c,requireOperations:async()=>m.c}));
+vi.mock('@/lib/security',()=>({requireSameOrigin:vi.fn(),rateLimit:vi.fn()}));
+vi.mock('next/cache',()=>({revalidatePath:vi.fn()}));
+vi.mock('next/navigation',()=>({unstable_rethrow:vi.fn()}));
+vi.mock('@/lib/db',()=>({db:{$queryRaw:m.tx.$queryRaw,$transaction:async(work:(tx:unknown)=>unknown)=>work(m.tx)}}));
+import {adjustLoyalty} from '@/server/growth-inventory';
+import {issueLoyaltyCode,verifyLoyaltyCode} from '@/server/loyalty-checkout';
+import {loyaltyHash} from '@/lib/operations/checkout';
+const customer='22222222-2222-4222-8222-222222222222';
+function form(points='50'){const f=new FormData();f.set('customerId',customer);f.set('points',points);f.set('reason','Visit reward');return f;}
+beforeEach(()=>{vi.resetAllMocks();m.c.membership.role='owner';m.tx.$queryRaw.mockResolvedValue([{id:'entry',points:250}]);m.tx.salonCustomer.findFirst.mockResolvedValue({id:customer});m.tx.loyaltyAccount.upsert.mockResolvedValue({id:'account',points:200});m.tx.loyaltyAccount.findUnique.mockResolvedValue({points:200});m.tx.loyaltyEntry.create.mockResolvedValue({id:'entry'});m.tx.loyaltyRedemption.create.mockResolvedValue({id:'code'});});
+it('awards points, ledger and audit atomically in one parameterized statement',async()=>{expect(await adjustLoyalty({},form())).toHaveProperty('message');const query=m.tx.$queryRaw.mock.calls[0][0];expect(query.text).toContain('::text');expect(query.text).toContain('ON CONFLICT');expect(query.text).toContain('LoyaltyEntry');expect(query.text).toContain('AuditEvent');expect(query.values).toContain(customer);expect(query.values).toContain(50);expect(m.tx.loyaltyAccount.update).not.toHaveBeenCalled();});
+it('uses redemption codes for spending rather than negative manual adjustments',async()=>{expect(await adjustLoyalty({},form('-50'))).toHaveProperty('error');expect(m.tx.loyaltyEntry.create).not.toHaveBeenCalled();});
+it('issues a hashed customer-bound code without spending points',async()=>{const result=await issueLoyaltyCode({},form());expect(result.error).toBeUndefined();const code=result.message?.match(/Redemption code: ([A-F0-9]+)/)?.[1];expect(code).toHaveLength(16);expect(m.tx.loyaltyRedemption.create).toHaveBeenCalledWith({data:expect.objectContaining({customerId:customer,points:50,codeHash:loyaltyHash(code!)})});expect(m.tx.loyaltyAccount.update).not.toHaveBeenCalled();expect(m.tx.loyaltyEntry.create).not.toHaveBeenCalled();});
+it('rejects a code request exceeding the available balance',async()=>{expect(await issueLoyaltyCode({},form('201'))).toHaveProperty('error','This customer does not have enough points.');expect(m.tx.loyaltyRedemption.create).not.toHaveBeenCalled();});
+it('rejects customers outside the current salon scope',async()=>{m.tx.salonCustomer.findFirst.mockResolvedValue(null);expect(await issueLoyaltyCode({},form())).toHaveProperty('error');expect(m.tx.loyaltyRedemption.create).not.toHaveBeenCalled();});
+it('previews a valid discount without spending points',async()=>{m.tx.loyaltyRedemption.findFirst.mockResolvedValue({points:50});expect(await verifyLoyaltyCode(customer,'TEST')).toEqual({points:50});expect(m.tx.loyaltyAccount.update).not.toHaveBeenCalled();});
+it('does not accept unknown, expired or consumed codes',async()=>{m.tx.loyaltyRedemption.findFirst.mockResolvedValue(null);expect(await verifyLoyaltyCode(customer,'TEST')).toHaveProperty('error');expect(m.tx.loyaltyRedemption.findFirst).toHaveBeenCalledWith({where:expect.objectContaining({customerId:customer,salonId:'salon',redeemedAt:null,expiresAt:{gt:expect.any(Date)}})});});

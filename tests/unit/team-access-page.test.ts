@@ -1,0 +1,17 @@
+import {beforeEach,expect,it,vi} from 'vitest';
+import React from 'react';
+import {renderToStaticMarkup} from 'react-dom/server';
+const m=vi.hoisted(()=>({find:vi.fn(),context:{salonId:'salon',user:{id:'owner'},administrator:true,membership:{role:'owner',branchScope:'all'},availableBranches:[{id:'branch',name:'Main'}]}}));
+vi.mock('@/lib/db',()=>({db:{salonMembership:{findMany:m.find},staffProfile:{findMany:async()=>[]}}}));
+vi.mock('@/lib/salon/context',()=>({requireModule:async()=>m.context}));
+vi.mock('next/navigation',()=>({redirect:()=>{throw new Error('Access denied');}}));
+vi.mock('@/server/operations',()=>({updateMemberAccess:vi.fn()}));
+vi.mock('@/lib/email/invitations',()=>({invitationEmailConfigured:()=>false}));
+vi.mock('@/components/auth/forms',()=>({InvitationForm:()=>React.createElement('div',{},'Invitation form'),TransferForm:()=>React.createElement('div',{},'Ownership transfer form')}));
+vi.mock('@/components/salon/shell',()=>({SalonShell:({children}:{children:React.ReactNode})=>React.createElement('main',{},children),PageHeading:({title,action}:{title:string;action:React.ReactNode})=>React.createElement('header',{},React.createElement('h1',{},title),action)}));
+vi.mock('@/components/operations/ui',()=>({ModuleTabs:()=>React.createElement('nav',{},'Settings / Access')}));
+import Access from '@/app/salon/settings/access/page';
+beforeEach(()=>{m.context.administrator=true;m.context.membership.role='owner';m.context.membership.branchScope='all';m.find.mockResolvedValue([{id:'member',userId:'staff',role:'staff',branchScope:'all',user:{displayName:'Jamie'},branches:[]}]);});
+it('groups invitations, role and location access, and ownership under Settings Access',async()=>{const html=renderToStaticMarkup(await Access());for(const text of ['Add teammate &amp; create invitation','Manage access','Location access','Ownership transfer form','View team'])expect(html).toContain(text);expect(m.find).toHaveBeenCalledWith(expect.objectContaining({where:{salonId:'salon',status:'active',user:{disabledAt:null}}}));});
+it('does not expose ownership transfer to administrators',async()=>{m.context.membership.role='admin';const html=renderToStaticMarkup(await Access());expect(html).toContain('Manage access');expect(html).not.toContain('Ownership transfer form');});
+it('denies non-administrators and selected-location administrators',async()=>{m.context.administrator=false;await expect(Access()).rejects.toThrow('Access denied');m.context.administrator=true;m.context.membership.branchScope='selected';await expect(Access()).rejects.toThrow('Access denied');expect(m.find).not.toHaveBeenCalled();});

@@ -1,0 +1,15 @@
+node_modules/
+.next/
+.next-perf/
+.env*
+!.env.example
+coverage/
+playwright-report/
+test-results/
+*.tsbuildinfo
+*.log
+src/generated/
+.cache/
+*.bak
+
+.next-*/

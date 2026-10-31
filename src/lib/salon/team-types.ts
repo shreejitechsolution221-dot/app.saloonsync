@@ -1,0 +1,2 @@
+export type TeamEmployee={id:string;profileId:string|null;membershipId:string|null;userId:string|null;name:string;jobTitle:string;commissionBps:number;active:boolean;disabled:boolean;role:string|null;membershipStatus:string|null;branchScope:string;branchIds:string[];locations:string[];invitationEmail:string|null;invitationStatus:'pending'|'expired'|'none'};
+export type TeamLogin={id:string;name:string;linked:boolean};

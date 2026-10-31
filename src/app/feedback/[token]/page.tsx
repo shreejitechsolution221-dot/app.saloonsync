@@ -1,0 +1,7 @@
+import {notFound} from 'next/navigation';
+import {createHash} from 'node:crypto';
+import {db} from '@/lib/db';
+import {ActionForm,Field} from '@/components/salon/forms';
+import {submitVisitFeedback} from '@/server/public-feedback';
+export const dynamic='force-dynamic';
+export default async function VisitFeedback({params}:{params:Promise<{token:string}>}){const {token}=await params;if(!/^[a-f0-9]{64}$/.test(token))notFound();const visit=await db.appointment.findFirst({where:{feedbackTokenHash:createHash('sha256').update(token).digest('hex'),feedbackTokenExpiresAt:{gt:new Date()},status:'completed'},select:{id:true,serviceName:true,salon:{select:{name:true}}}});if(!visit)notFound();const existing=await db.feedback.findUnique({where:{appointmentId:visit.id},select:{id:true}});return <main id="main" className="feedback-page studio-app"><section className="studio-panel"><p className="eyebrow">A LITTLE MORE CARE</p><h1>How was your visit?</h1><p>{visit.serviceName} · {visit.salon.name}</p>{existing?<p role="status">Thank you. Feedback for this visit has already been recorded.</p>:<ActionForm action={submitVisitFeedback} submit="Share my feedback"><input type="hidden" name="token" value={token}/><Field name="rating" label="Your rating (1–5)" type="number" min={1} max={5}/><label className="field">Anything you would like us to know?<textarea name="comment" maxLength={1000}/></label></ActionForm>}</section></main>;}
