@@ -5,6 +5,13 @@ The build generates Prisma Client before compiling Next.js. No Vercel CLI
 dependency is required for Git deployments. `@vercel/functions` manages the
 existing PostgreSQL pool when Vercel suspends a function instance.
 
+Vercel builds use `.next`, matching `outputDirectory` in `vercel.json`.
+Local production builds use `.next-production` to avoid overwriting an active
+development build. `NEXT_DIST_DIR` overrides only the local directory; it is
+ignored on Vercel so a local setting cannot break deployment packaging.
+If deployment reports `NEXT_OUTPUT_DIR_MISSING`, deploy the commit containing
+both configuration files rather than retrying an older deployment.
+
 Configure the required values from `.env.example` separately for preview and
 production. Set `APP_ORIGIN` to the exact HTTPS application origin. Configure
 the identity provider's site URL and allowed callback URLs for that origin.

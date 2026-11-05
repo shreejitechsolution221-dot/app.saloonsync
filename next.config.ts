@@ -1,7 +1,8 @@
 import type { NextConfig } from 'next';
 const config: NextConfig = {
-  // Production builds must not share webpack artifacts with a running dev app.
-  distDir: process.env.NEXT_DIST_DIR || (process.env.NODE_ENV==='production'?'.next-production':'.next'),
+  // Vercel's Next.js adapter expects .next. Keep local production builds
+  // isolated from a running dev app, with an optional local override.
+  distDir: process.env.VERCEL === '1' ? '.next' : process.env.NEXT_DIST_DIR || (process.env.NODE_ENV==='production'?'.next-production':'.next'),
   poweredByHeader: false,
   experimental: {serverActions: {bodySizeLimit: '6mb'}},
   async headers() {
