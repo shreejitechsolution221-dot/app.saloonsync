@@ -2,13 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getCustomerBookingAvailability } from '@/lib/customer/queries';
 import { rateLimit } from '@/lib/security';
+import { DomainError } from '@/lib/operations/errors';
 
 const availabilityQuerySchema = z.object({
   salonId: z.string().uuid(),
   branchId: z.string().uuid(),
   durationMinutes: z.coerce.number().int().min(5).max(480).default(30),
   staffId: z.string().uuid().optional(),
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  date: z.iso.date(),
+  serviceIds: z.array(z.uuid()).max(10).optional(),
 });
 
 export async function GET(request: NextRequest) {
@@ -23,6 +25,7 @@ export async function GET(request: NextRequest) {
       durationMinutes: searchParams.get('durationMinutes') || 30,
       staffId: searchParams.get('staffId') || undefined,
       date: searchParams.get('date'),
+      serviceIds: searchParams.get('serviceIds')?.split(',').filter(Boolean),
     });
 
     if (!parsed.success) {
@@ -36,10 +39,12 @@ export async function GET(request: NextRequest) {
       durationMinutes,
       staffId,
       date,
+      { serviceIds: parsed.data.serviceIds },
     );
 
     return NextResponse.json({ slots }, { headers: { 'Cache-Control': 'private, no-store' } });
   } catch (err) {
+    if (err instanceof DomainError) return NextResponse.json({ error: err.message }, { status: 429 });
     return NextResponse.json({ error: 'Unable to check slot availability' }, { status: 500 });
   }
 }

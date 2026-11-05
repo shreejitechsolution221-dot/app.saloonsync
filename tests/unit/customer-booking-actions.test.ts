@@ -3,6 +3,8 @@ import { beforeEach, expect, it, vi } from 'vitest';
 const m = vi.hoisted(() => ({
   user: { id: '11111111-1111-4111-8111-111111111111', displayName: 'Jane Doe', email: 'jane@example.com', mobileNumber: '+919876543210' },
   origin: vi.fn(),
+  availability: vi.fn(),
+  invalidate: vi.fn(),
   rateLimit: vi.fn(),
   salon: vi.fn(),
   branch: vi.fn(),
@@ -22,8 +24,10 @@ const m = vi.hoisted(() => ({
   userUpdate: vi.fn(),
 }));
 
+vi.mock('@/lib/customer/queries', () => ({ getCustomerBookingAvailability: m.availability }));
+vi.mock('@/lib/customer/cache', () => ({ invalidateCustomer: m.invalidate }));
 vi.mock('@/lib/authorization/server', () => ({
-  requireAuthenticatedUser: async () => m.user,
+  requireCustomerUser: async () => m.user,
 }));
 
 vi.mock('@/lib/security', () => ({
@@ -39,6 +43,7 @@ vi.mock('@/lib/db', () => ({
   db: {
     $transaction: async (work: (tx: unknown) => unknown) =>
       work({
+        $queryRaw: vi.fn().mockResolvedValue([]),
         salon: { findFirst: m.salon },
         branch: { findFirst: m.branch },
         service: { findMany: m.service },
@@ -81,7 +86,8 @@ function validBookForm() {
   f.set('branchId', branchId);
   f.set('serviceIds', serviceId);
   f.set('assignedUserId', staffId);
-  f.set('startsAt', new Date(Date.now() + 86400000).toISOString());
+  const startsAt = new Date(Date.now() + 86400000); startsAt.setUTCSeconds(0, 0);
+  f.set('startsAt', startsAt.toISOString());
   f.set('contactPhone', '+919876543210');
   f.set('notes', 'Fade cut');
   f.set('whatsappConsent', 'on');
@@ -89,6 +95,11 @@ function validBookForm() {
 }
 
 beforeEach(() => {
+  m.availability.mockImplementation(async (_salon: string, _branch: string, _duration: number, _staff: string, date: string) => {
+    const startsAt = new Date(Date.now() + 86400000);
+    startsAt.setUTCSeconds(0, 0);
+    return [{ isoString: startsAt.toISOString(), available: true, availableStaffIds: [staffId] }, { isoString: new Date(date + 'T11:00:00+05:30').toISOString(), available: true, availableStaffIds: [staffId] }];
+  });
   m.origin.mockResolvedValue(undefined);
   m.rateLimit.mockResolvedValue(undefined);
   m.salon.mockResolvedValue({ id: salonId, name: 'Micasa Saloon' });
@@ -143,12 +154,7 @@ it('successfully books a customer appointment with server-side validation and au
 });
 
 it('prevents double booking when a conflicting appointment exists', async () => {
-  const futureStart = new Date(Date.now() + 86400000);
-  m.appointmentFind.mockResolvedValueOnce({
-    id: 'conflicting',
-    startsAt: futureStart,
-    durationMinutes: 60,
-  });
+  m.availability.mockResolvedValueOnce([]);
 
   const res = await bookCustomerAppointment({}, validBookForm());
   expect(res.error).toContain('no longer available');
@@ -209,16 +215,17 @@ it('blocks cancelling an appointment that is already completed', async () => {
 
 it('allows customer to reschedule an upcoming appointment to a free slot', async () => {
   const newDate = new Date(Date.now() + 172800000); // 2 days in future
+  m.availability.mockResolvedValueOnce([{ isoString: newDate.toISOString(), available: true, availableStaffIds: [staffId] }]);
   m.appointmentFind
     .mockResolvedValueOnce({
       id: appointmentId,
       salonId,
       branchId,
       assignedUserId: staffId,
+      startsAt: new Date(Date.now() + 86400000),
       durationMinutes: 45,
       status: 'confirmed',
-    })
-    .mockResolvedValueOnce(null); // No conflict
+    });
 
   const f = new FormData();
   f.set('appointmentId', appointmentId);
@@ -280,4 +287,16 @@ it('updates customer profile name and phone', async () => {
     create: { userId: m.user.id, phone: '+919999988888' },
     update: { phone: '+919999988888' },
   });
+});
+
+it('rejects booking without available staff and does not invalidate cached data', async () => {
+  m.availability.mockResolvedValueOnce([]);
+  const result = await bookCustomerAppointment({}, validBookForm());
+  expect(result.error).toContain('no longer available');
+  expect(m.appointmentCreate).not.toHaveBeenCalled();
+  expect(m.invalidate).not.toHaveBeenCalled();
+});
+it('invalidates only the authenticated customer after a successful booking', async () => {
+  await bookCustomerAppointment({}, validBookForm());
+  expect(m.invalidate).toHaveBeenCalledWith(m.user.id);
 });

@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { supabase } from '@/lib/auth/supabase';
 import { branchPermitted, permits, type Permission } from './policy';
 import { cache } from 'react';
+import { getPortalAccess } from '@/lib/auth/portal-access';
 export class AccessError extends Error {
   constructor(public code: 'UNAUTHENTICATED' | 'UNVERIFIED' | 'FORBIDDEN' | 'MFA_REQUIRED') { super(code); }
 }
@@ -27,6 +28,16 @@ export const requirePlatformPrivilege = cache(async function requirePlatformPriv
   if (!grant || grant.status !== 'active' || grant.revokedAt) throw new AccessError('FORBIDDEN');
   const { data, error } = await user.auth.auth.mfa.getAuthenticatorAssuranceLevel();
   if (error || data?.currentLevel !== 'aal2') throw new AccessError('MFA_REQUIRED');
+  return user;
+});
+export const requireCustomerUser = cache(async function requireCustomerUser() {
+  const user = await requireAuthenticatedUser();
+  if (!(await getPortalAccess(user.id)).customer) throw new AccessError('FORBIDDEN');
+  return user;
+});
+export const requireSalonUser = cache(async function requireSalonUser() {
+  const user = await requireAuthenticatedUser();
+  if (!(await getPortalAccess(user.id)).salon) throw new AccessError('FORBIDDEN');
   return user;
 });
 export const requireSalonMembership = cache(async function requireSalonMembership(salonId: string) {

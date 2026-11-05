@@ -22,6 +22,8 @@ export type CustomerSalonSummary = {
 };
 
 export type CustomerSalonDetail = {
+  openingHour?: number;
+  closingHour?: number;
   id: string;
   name: string;
   slug: string;

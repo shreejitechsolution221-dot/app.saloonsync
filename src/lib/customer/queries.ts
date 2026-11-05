@@ -1,5 +1,9 @@
 import 'server-only';
 import { db } from '@/lib/db';
+import { createHash } from 'node:crypto';
+import { cached } from '@/server/cache';
+import { settings } from '@/lib/salon/layout-data';
+import type { Prisma } from '@/generated/prisma/client';
 import type {
   CustomerSalonSummary,
   CustomerSalonDetail,
@@ -9,7 +13,7 @@ import type {
   CustomerOfferItem,
 } from './types';
 
-export async function getCustomerDashboardData(userId?: string) {
+async function loadCustomerDashboardData(userId?: string) {
   const [user, profile, appointments, salons, offers, salonCustomers] = await Promise.all([
     userId
       ? db.user.findUnique({
@@ -27,7 +31,6 @@ export async function getCustomerDashboardData(userId?: string) {
       ? db.appointment.findMany({
           where: { customerUserId: userId },
           orderBy: { startsAt: 'desc' },
-          take: 10,
           include: {
             salon: { select: { id: true, name: true, slug: true } },
             branch: { select: { id: true, name: true, address: true, phone: true } },
@@ -47,10 +50,7 @@ export async function getCustomerDashboardData(userId?: string) {
         services: { where: { active: true }, select: { id: true, name: true, category: true, durationMinutes: true, pricePaise: true }, take: 6 },
       },
     }),
-    db.offer.findMany({
-      where: { active: true, expiresAt: { gt: new Date() } },
-      take: 2,
-    }),
+    loadActiveOffers(2),
     userId
       ? db.salonCustomer.findMany({
           where: { userId },
@@ -64,7 +64,7 @@ export async function getCustomerDashboardData(userId?: string) {
     .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime())[0];
 
   const recentPastBookings = appointments
-    .filter((a) => ['completed', 'confirmed'].includes(a.status) && a.id !== upcomingBooking?.id)
+    .filter((a) => ['completed', 'confirmed'].includes(a.status) && a.startsAt < new Date() && a.id !== upcomingBooking?.id)
     .slice(0, 3);
 
   // Check loyalty points across salons
@@ -78,6 +78,7 @@ export async function getCustomerDashboardData(userId?: string) {
 
   const salonMap = new Map(salons.map((s) => [s.id, s.name]));
 
+  const ratings = await salonRatings(salons.map(s => s.id));
   const featuredSalons: CustomerSalonSummary[] = salons.map((s) => {
     const minPrice = s.services.length
       ? Math.min(...s.services.map((srv) => srv.pricePaise))
@@ -87,8 +88,8 @@ export async function getCustomerDashboardData(userId?: string) {
       name: s.name,
       slug: s.slug,
       status: s.status,
-      rating: 4.9,
-      reviewCount: 38,
+      rating: ratings.get(s.id)?.rating ?? 0,
+      reviewCount: ratings.get(s.id)?.count ?? 0,
       branches: s.branches,
       services: s.services,
       startingPricePaise: minPrice,
@@ -143,7 +144,7 @@ export async function getCustomerDashboardData(userId?: string) {
   };
 }
 
-export async function getExploreSalonsData(filters?: {
+async function loadExploreSalonsData(filters?: {
   query?: string;
   category?: string;
   branchId?: string;
@@ -190,6 +191,7 @@ export async function getExploreSalonsData(filters?: {
     'Facial',
   ];
 
+  const ratings = await salonRatings(salons.map(s => s.id));
   let result: CustomerSalonSummary[] = salons.map((s) => {
     const minPrice = s.services.length
       ? Math.min(...s.services.map((srv) => srv.pricePaise))
@@ -199,8 +201,8 @@ export async function getExploreSalonsData(filters?: {
       name: s.name,
       slug: s.slug,
       status: s.status,
-      rating: 4.9,
-      reviewCount: 38,
+      rating: ratings.get(s.id)?.rating ?? 0,
+      reviewCount: ratings.get(s.id)?.count ?? 0,
       branches: s.branches,
       services: s.services,
       startingPricePaise: minPrice,
@@ -220,7 +222,7 @@ export async function getExploreSalonsData(filters?: {
   };
 }
 
-export async function getSalonProfileData(salonSlugOrId: string): Promise<CustomerSalonDetail | null> {
+async function loadSalonProfileData(salonSlugOrId: string): Promise<CustomerSalonDetail | null> {
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(salonSlugOrId);
   const salon = await db.salon.findFirst({
     where: isUuid ? { id: salonSlugOrId, status: 'active' } : { slug: salonSlugOrId, status: 'active' },
@@ -241,7 +243,7 @@ export async function getSalonProfileData(salonSlugOrId: string): Promise<Custom
         orderBy: [{ category: 'asc' }, { pricePaise: 'asc' }],
       },
       memberships: {
-        where: { status: 'active' },
+        where: { status: 'active', role: { in: ['owner', 'admin', 'manager', 'staff'] }, user: { disabledAt: null } },
         include: {
           user: { select: { displayName: true } },
         },
@@ -250,16 +252,19 @@ export async function getSalonProfileData(salonSlugOrId: string): Promise<Custom
   });
 
   if (!salon) return null;
+  const ratings = await salonRatings([salon.id]);
 
   return {
     id: salon.id,
     name: salon.name,
     slug: salon.slug,
     status: salon.status,
-    rating: 4.9,
-    reviewCount: 42,
+    rating: ratings.get(salon.id)?.rating ?? 0,
+    reviewCount: ratings.get(salon.id)?.count ?? 0,
     branches: salon.branches,
     services: salon.services,
+    openingHour: settings(salon.settings).openingHour,
+    closingHour: settings(salon.settings).closingHour,
     staff: salon.memberships.map((m) => ({
       id: m.id,
       userId: m.userId,
@@ -269,7 +274,7 @@ export async function getSalonProfileData(salonSlugOrId: string): Promise<Custom
   };
 }
 
-export async function getCustomerBookings(userId: string) {
+async function loadCustomerBookings(userId: string) {
   const appointments = await db.appointment.findMany({
     where: { customerUserId: userId },
     orderBy: { startsAt: 'desc' },
@@ -323,17 +328,27 @@ export async function getCustomerBookingAvailability(
   serviceDurationMinutes: number,
   selectedStaffUserId?: string,
   targetDateStr?: string, // "YYYY-MM-DD"
+  options: { client?: Prisma.TransactionClient; serviceIds?: string[]; excludeAppointmentId?: string } = {},
 ): Promise<TimeSlot[]> {
-  const dateStr = targetDateStr || new Date().toISOString().split('T')[0];
-  const openingHour = 9; // 9:00 AM IST
-  const closingHour = 20; // 8:00 PM IST
+  const client = options.client ?? db;
+  const dateStr = targetDateStr || new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10);
+  const day = new Date(dateStr + 'T00:00:00+05:30');
+  if (!Number.isFinite(day.getTime()) || new Date(day.getTime() + 330 * 60000).toISOString().slice(0, 10) !== dateStr || !Number.isInteger(serviceDurationMinutes) || serviceDurationMinutes < 5 || serviceDurationMinutes > 480) return [];
+  const branch = await client.branch.findFirst({ where: { id: branchId, salonId, status: 'active', salon: { status: 'active' } }, select: { id: true, salon: { select: { settings: true } } } });
+  if (!branch) return [];
+  const rules = settings(branch.salon.settings);
+  const { openingHour, closingHour } = rules;
+  const services = options.serviceIds?.length ? await client.service.findMany({ where: { id: { in: options.serviceIds }, salonId, active: true }, select: { eligibleUserIds: true } }) : [];
+  if (options.serviceIds?.length && services.length !== options.serviceIds.length) return [];
   const slotStepMinutes = 30;
 
   // Find active staff for this branch and salon
-  const staffMemberships = await db.salonMembership.findMany({
+  const staffMemberships = await client.salonMembership.findMany({
     where: {
       salonId,
       status: 'active',
+      role: { in: ['owner', 'admin', 'manager', 'staff'] },
+      user: { disabledAt: null },
       ...(selectedStaffUserId ? { userId: selectedStaffUserId } : {}),
       OR: [
         { branchScope: 'all' },
@@ -343,19 +358,20 @@ export async function getCustomerBookingAvailability(
     select: { userId: true },
   });
 
-  const eligibleUserIds = staffMemberships.map((s) => s.userId);
+  const eligibleUserIds = staffMemberships.map((s) => s.userId).filter(id => services.every(s => !s.eligibleUserIds.length || s.eligibleUserIds.includes(id)));
 
   // Day window in IST (+05:30)
   const dayStartUtc = new Date(`${dateStr}T00:00:00+05:30`);
   const dayEndUtc = new Date(`${dateStr}T23:59:59+05:30`);
 
-  // Fetch appointments for this branch on this day to detect overlaps
-  const dayAppointments = await db.appointment.findMany({
+  // Check every branch where these stylists work, including visits crossing midnight.
+  const dayAppointments = await client.appointment.findMany({
     where: {
       salonId,
-      branchId,
+      assignedUserId: { in: eligibleUserIds },
+      ...(options.excludeAppointmentId ? { id: { not: options.excludeAppointmentId } } : {}),
       status: { notIn: ['cancelled', 'no_show'] },
-      startsAt: { gte: dayStartUtc, lte: dayEndUtc },
+      startsAt: { gte: new Date(dayStartUtc.getTime() - 480 * 60000), lte: dayEndUtc },
     },
     select: {
       id: true,
@@ -366,7 +382,7 @@ export async function getCustomerBookingAvailability(
   });
 
   // Fetch staff approved leave on this day
-  const leaves = await db.leaveRequest.findMany({
+  const leaves = await client.leaveRequest.findMany({
     where: {
       salonId,
       status: 'approved',
@@ -377,6 +393,7 @@ export async function getCustomerBookingAvailability(
     select: { userId: true, startsAt: true, endsAt: true },
   });
 
+  const shifts = rules.requireShift ? await client.shift.findMany({ where: { salonId, branchId, userId: { in: eligibleUserIds }, cancelledAt: null, startsAt: { lte: dayEndUtc }, endsAt: { gte: dayStartUtc } }, select: { userId: true, startsAt: true, endsAt: true } }) : [];
   const slots: TimeSlot[] = [];
   const now = new Date();
 
@@ -402,6 +419,7 @@ export async function getCustomerBookingAvailability(
 
       // Determine available staff for this slot
       const availableStaff = eligibleUserIds.filter((staffId) => {
+        if (rules.requireShift && !shifts.some(s => s.userId === staffId && s.startsAt <= slotStartTime && s.endsAt >= slotEndTime)) return false;
         // Check leave
         const onLeave = leaves.some(
           (l) => l.userId === staffId && l.startsAt < slotEndTime && l.endsAt > slotStartTime,
@@ -437,7 +455,7 @@ export async function getCustomerBookingAvailability(
   return slots;
 }
 
-export async function getCustomerLoyaltyOffers(userId?: string) {
+async function loadCustomerLoyaltyOffers(userId?: string) {
   const salonCustomers = userId
     ? await db.salonCustomer.findMany({
         where: { userId },
@@ -451,10 +469,7 @@ export async function getCustomerLoyaltyOffers(userId?: string) {
           where: { customerId: { in: salonCustomers.map((c) => c.id) } },
         })
       : Promise.resolve([]),
-    db.offer.findMany({
-      where: { active: true, expiresAt: { gt: new Date() } },
-      orderBy: { createdAt: 'desc' },
-    }),
+    loadActiveOffers(),
     db.salon.findMany({
       where: { status: 'active' },
       select: { id: true, name: true },
@@ -481,4 +496,22 @@ export async function getCustomerLoyaltyOffers(userId?: string) {
   }));
 
   return { loyaltySummary, activeOffers };
+}
+
+// Serialized DTOs only; private entries always include the customer ID.
+export function getCustomerDashboardData(userId?: string) { return cached(`customer:v1:${userId ?? "guest"}:dashboard`, 15, () => loadCustomerDashboardData(userId)); }
+export function getExploreSalonsData(filters?: Parameters<typeof loadExploreSalonsData>[0]) { const hash = createHash("sha256").update(JSON.stringify(filters ?? {})).digest("hex"); return cached(`customer:v1:explore:${hash}`, 30, () => loadExploreSalonsData(filters)); }
+export function getSalonProfileData(salonSlugOrId: string) { return cached(`customer:v1:salon:${salonSlugOrId}`, 30, () => loadSalonProfileData(salonSlugOrId)); }
+export function getCustomerBookings(userId: string) { return cached(`customer:v1:${userId}:bookings`, 15, () => loadCustomerBookings(userId)); }
+export function getCustomerLoyaltyOffers(userId?: string) { return cached(`customer:v1:${userId ?? "guest"}:offers`, 15, () => loadCustomerLoyaltyOffers(userId)); }
+
+async function salonRatings(salonIds: string[]) {
+  if (!salonIds.length) return new Map<string, { rating: number; count: number }>();
+  const rows = await db.feedback.groupBy({ by: ['salonId'], where: { salonId: { in: salonIds } }, _avg: { rating: true }, _count: { rating: true } });
+  return new Map(rows.map(row => [row.salonId, { rating: Math.round((row._avg.rating ?? 0) * 10) / 10, count: row._count.rating }]));
+}
+
+async function loadActiveOffers(take?: number) {
+  const salons = await db.salon.findMany({ where: { status: 'active' }, select: { id: true } });
+  return db.offer.findMany({ where: { active: true, salonId: { in: salons.map(s => s.id) }, expiresAt: { gt: new Date() } }, orderBy: { createdAt: 'desc' }, ...(take ? { take } : {}) });
 }

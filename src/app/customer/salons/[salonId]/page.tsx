@@ -41,7 +41,7 @@ export default async function CustomerSalonProfilePage({
               <div className="profile-meta-line">
                 <span className="rating-badge">★ {salon.rating}</span>
                 <span className="review-count">({salon.reviewCount} verified client reviews)</span>
-                <span className="hours-badge">Open 9:00 AM – 8:00 PM IST</span>
+                <span className="hours-badge">Hours: {salon.openingHour ?? 9}:00 – {salon.closingHour ?? 21}:00 IST</span>
               </div>
             </div>
             <div className="profile-hero-actions">

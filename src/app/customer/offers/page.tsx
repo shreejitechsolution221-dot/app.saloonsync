@@ -1,24 +1,12 @@
 import Link from 'next/link';
-import { authConfigured } from '@/lib/auth/config';
-import { supabase } from '@/lib/auth/supabase';
+import { optionalCustomerUser } from '@/lib/customer/identity';
 import { getCustomerLoyaltyOffers } from '@/lib/customer/queries';
 import { CustomerIcon } from '@/components/customer/icons';
 
 export const dynamic = 'force-dynamic';
 
 export default async function CustomerOffersPage() {
-  let userId: string | undefined;
-  if (authConfigured()) {
-    try {
-      const client = await supabase();
-      const {
-        data: { user },
-      } = await client.auth.getUser();
-      if (user) userId = user.id;
-    } catch {
-      // Unauthenticated
-    }
-  }
+  const userId = (await optionalCustomerUser())?.id;
 
   const { loyaltySummary, activeOffers } = await getCustomerLoyaltyOffers(userId);
 

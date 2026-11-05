@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 import { supabase } from '@/lib/auth/supabase';
 import { portalOf, safeDestination } from '@/lib/auth/redirects';
 import { appOrigin } from '@/lib/security';
+import { authorizePortalSession } from '@/lib/auth/portal-access';
 export async function GET(request: NextRequest) {
   const code = request.nextUrl.searchParams.get('code');
   const next = safeDestination(request.nextUrl.searchParams.get('next'));
@@ -21,6 +22,12 @@ export async function GET(request: NextRequest) {
           return NextResponse.redirect(new URL('/auth/forgot-password?portal=' + portalOf(store.get('auth_portal')?.value ?? request.nextUrl.searchParams.get('portal')) + '&error=recovery', appOrigin()));
         }
         const destination = recovery ? '/auth/reset-password' : store.has('invitation') ? '/salon/invitations/accept' : next;
+        if (!recovery && !store.has('invitation')) {
+          const portal = portalOf(next.startsWith('/customer') ? 'customer' : next.startsWith('/platform') ? 'platform' : 'salon');
+          if (!await authorizePortalSession(client, data.user.id, portal)) {
+            return NextResponse.redirect(new URL(`/${portal}/login?error=role`, appOrigin()));
+          }
+        }
         return NextResponse.redirect(new URL(destination, appOrigin()));
       }
     } catch { /* Display a generic, non-sensitive recovery state. */ }

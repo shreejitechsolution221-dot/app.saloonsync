@@ -3,6 +3,7 @@ import { Prisma, PrismaClient } from '@/generated/prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { poolConfig } from '@/lib/performance/pool-config';
 import { Pool } from 'pg';
+import { attachDatabasePool } from '@vercel/functions';
 import {databaseOperation} from '@/lib/performance/database-timing';
 import {createHash} from 'node:crypto';
 const globalDb = globalThis as unknown as { prisma?: PrismaClient; prismaPool?: Pool; prismaFields?: string; prismaConnection?:string };
@@ -18,6 +19,8 @@ const cached = globalDb.prismaFields === generatedFields&&globalDb.prismaConnect
 const pool = cached ? globalDb.prismaPool : new Pool({ connectionString: process.env.DATABASE_URL, ...poolConfig(), min: process.env.NODE_ENV === 'development' ? 1 : 0 });
 // pg emits errors for idle sockets too. Never log connection strings or SQL.
 if (!cached) pool!.on('error', () => console.error(JSON.stringify({ event: 'database.idle_connection_error' })));
+// Release idle connections before a Vercel Fluid Compute instance suspends.
+if (!cached && process.env.VERCEL === '1') attachDatabasePool(pool!);
 let slowQueries = 0;
 function createClient(dbPool:Pool) {
   const client = new PrismaClient({ adapter: new PrismaPg(dbPool, { schema: 'app', disposeExternalPool: true }), transactionOptions: { maxWait: 5000, timeout: 15000 }, log: [{ emit: 'event', level: 'query' }] });

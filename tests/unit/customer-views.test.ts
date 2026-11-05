@@ -97,8 +97,9 @@ vi.mock('@/lib/auth/page-guard', () => ({
 }));
 
 vi.mock('@/lib/authorization/server', () => ({
-  requireAuthenticatedUser: async () => m.user,
+  requireCustomerUser: async () => m.user,
 }));
+vi.mock('@/lib/customer/identity', () => ({ optionalCustomerUser: async () => m.user }));
 
 vi.mock('@/lib/customer/queries', () => ({
   getCustomerDashboardData: async () => m.dashboard,

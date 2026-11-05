@@ -19,8 +19,8 @@ export default function CustomerFavoritesPage() {
 
   const loadFavorites = () => {
     try {
-      const favs: string[] = JSON.parse(localStorage.getItem('glowdesk_fav_salons') || '[]');
-      setFavoriteSalonIds(favs);
+      const favs: unknown = JSON.parse(localStorage.getItem('glowdesk_fav_salons') || '[]');
+      setFavoriteSalonIds(Array.isArray(favs) ? favs.filter((id): id is string => typeof id === 'string') : []);
     } catch {
       setFavoriteSalonIds([]);
     }
@@ -82,7 +82,7 @@ export default function CustomerFavoritesPage() {
               <div className="fav-card-header">
                 <div>
                   <h3>{salon.name}</h3>
-                  <span className="rating-tag">★ {salon.rating || '4.9'}</span>
+                  <span className="rating-tag">★ {salon.rating || 'New'}</span>
                 </div>
                 <FavoriteButton id={salon.id} type="salon" name={salon.name} />
               </div>

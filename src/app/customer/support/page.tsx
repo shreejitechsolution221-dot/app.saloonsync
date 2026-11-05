@@ -25,7 +25,7 @@ export default async function CustomerSupportPage() {
     },
     {
       q: 'What is the salon cancellation and rescheduling policy?',
-      a: 'You can reschedule or cancel any upcoming appointment free of charge up to 2 hours before your scheduled time directly from your "My Bookings" tab. If an unexpected emergency occurs within 2 hours, please call the branch phone number directly.',
+      a: 'You can reschedule or cancel any upcoming appointment free of charge before your scheduled start time directly from your "My Bookings" tab. If your appointment has already started, please call the branch phone number directly.',
     },
     {
       q: 'How does stylist selection work?',

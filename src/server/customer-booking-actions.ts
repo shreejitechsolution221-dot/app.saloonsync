@@ -4,7 +4,9 @@ import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
 import { revalidatePath } from 'next/cache';
 import { db } from '@/lib/db';
-import { requireAuthenticatedUser } from '@/lib/authorization/server';
+import { getCustomerBookingAvailability } from '@/lib/customer/queries';
+import { invalidateCustomer } from '@/lib/customer/cache';
+import { requireCustomerUser } from '@/lib/authorization/server';
 import { requireSameOrigin, rateLimit } from '@/lib/security';
 import { DomainError } from '@/lib/operations/errors';
 import { saveError } from '@/lib/operations/save-error';
@@ -24,7 +26,7 @@ const bookInput = z.object({
 export async function bookCustomerAppointment(_: FormState, formData: FormData): Promise<FormState & { bookingReference?: string }> {
   try {
     await requireSameOrigin();
-    const user = await requireAuthenticatedUser();
+    const user = await requireCustomerUser();
     await rateLimit('customer-booking', user.id, 20);
 
     const rawServiceIds = formData.getAll('serviceIds').map(String);
@@ -40,7 +42,7 @@ export async function bookCustomerAppointment(_: FormState, formData: FormData):
     });
 
     const startsAt = new Date(parsed.startsAt);
-    if (startsAt.getTime() <= Date.now() + 5 * 60000) {
+    if (startsAt.getTime() <= Date.now() + 15 * 60000) {
       throw new DomainError('Please choose a time slot in the future.');
     }
 
@@ -66,70 +68,14 @@ export async function bookCustomerAppointment(_: FormState, formData: FormData):
       const totalDuration = services.reduce((acc, s) => acc + s.durationMinutes, 0);
       const totalPricePaise = services.reduce((acc, s) => acc + s.pricePaise, 0);
       const combinedServiceNames = services.map((s) => s.name).join(' + ');
-      const endsAt = new Date(startsAt.getTime() + totalDuration * 60000);
 
-      // 3. Resolve Staff Assignment
-      let assignedStaffId = parsed.assignedUserId && parsed.assignedUserId.length > 0 ? parsed.assignedUserId : null;
-      if (assignedStaffId) {
-        const staff = await tx.salonMembership.findFirst({
-          where: {
-            salonId: parsed.salonId,
-            userId: assignedStaffId,
-            status: 'active',
-            OR: [{ branchScope: 'all' }, { branches: { some: { branchId: parsed.branchId } } }],
-          },
-          select: { userId: true },
-        });
-        if (!staff) throw new DomainError('Selected specialist is not available at this location.');
-      } else {
-        // Auto-assign an available staff member who has no conflict
-        const branchStaff = await tx.salonMembership.findMany({
-          where: {
-            salonId: parsed.salonId,
-            status: 'active',
-            OR: [{ branchScope: 'all' }, { branches: { some: { branchId: parsed.branchId } } }],
-          },
-          select: { userId: true },
-        });
-
-        // Find one staff member without overlapping appointments
-        for (const candidate of branchStaff) {
-          const conflict = await tx.appointment.findFirst({
-            where: {
-              salonId: parsed.salonId,
-              assignedUserId: candidate.userId,
-              status: { notIn: ['cancelled', 'no_show'] },
-              startsAt: { lt: endsAt },
-            },
-            select: { id: true, startsAt: true, durationMinutes: true },
-          });
-
-          if (!conflict || new Date(conflict.startsAt.getTime() + conflict.durationMinutes * 60000) <= startsAt) {
-            assignedStaffId = candidate.userId;
-            break;
-          }
-        }
-      }
-
-      // 4. Double-Booking Prevention Check (Server-side slot check)
-      if (assignedStaffId) {
-        const conflictAppt = await tx.appointment.findFirst({
-          where: {
-            salonId: parsed.salonId,
-            assignedUserId: assignedStaffId,
-            status: { notIn: ['cancelled', 'no_show'] },
-            startsAt: { lt: endsAt },
-          },
-          select: { id: true, startsAt: true, durationMinutes: true },
-        });
-
-        if (conflictAppt) {
-          const apptEnd = new Date(conflictAppt.startsAt.getTime() + conflictAppt.durationMinutes * 60000);
-          if (apptEnd > startsAt) {
-            throw new DomainError('This time slot is no longer available. Please select another slot.');
-          }
-        }
-      }
+      // Final validation uses live transactional data, never cached availability.
+      const date = new Date(startsAt.getTime() + 330 * 60000).toISOString().slice(0, 10);
+      const slots = await getCustomerBookingAvailability(parsed.salonId, parsed.branchId, totalDuration, parsed.assignedUserId || undefined, date, { client: tx, serviceIds: parsed.serviceIds });
+      const slot = slots.find(s => s.isoString === startsAt.toISOString() && s.available);
+      const assignedStaffId = slot?.availableStaffIds?.[0];
+      if (!assignedStaffId) throw new DomainError('This time slot is no longer available. Please select another slot.');
+      // The database overlap trigger serializes concurrent writes for this stylist.
 
       // 5. Upsert or Link SalonCustomer
       let salonCustomer = await tx.salonCustomer.findFirst({
@@ -210,7 +156,8 @@ export async function bookCustomerAppointment(_: FormState, formData: FormData):
       });
     }, { timeout: 15000 });
 
-    revalidatePath('/customer');
+    await invalidateCustomer(user.id);
+    revalidatePath('/customer', 'layout');
     revalidatePath('/customer/bookings');
     return {
       message: `Your appointment is confirmed! Reference: ${bookingRef}`,
@@ -224,13 +171,14 @@ export async function bookCustomerAppointment(_: FormState, formData: FormData):
 export async function cancelCustomerAppointment(_: FormState, formData: FormData): Promise<FormState> {
   try {
     await requireSameOrigin();
-    const user = await requireAuthenticatedUser();
+    const user = await requireCustomerUser();
     await rateLimit('customer-cancel', user.id, 20);
 
     const appointmentId = z.string().uuid().parse(formData.get('appointmentId'));
     const reason = z.string().max(200).optional().parse(formData.get('reason') || undefined);
 
     await db.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM app."Appointment" WHERE id=${appointmentId}::uuid AND "customerUserId"=${user.id}::uuid FOR UPDATE`;
       const appt = await tx.appointment.findFirst({
         where: { id: appointmentId, customerUserId: user.id },
         select: { id: true, salonId: true, branchId: true, startsAt: true, status: true },
@@ -241,6 +189,7 @@ export async function cancelCustomerAppointment(_: FormState, formData: FormData
         throw new DomainError(`Cannot cancel an appointment that is already ${appt.status.replace('_', ' ')}.`);
       }
 
+      if (appt.startsAt <= new Date()) throw new DomainError('Only upcoming appointments can be changed.');
       await tx.appointment.update({
         where: { id: appointmentId },
         data: { status: 'cancelled' },
@@ -260,7 +209,8 @@ export async function cancelCustomerAppointment(_: FormState, formData: FormData
       });
     });
 
-    revalidatePath('/customer');
+    await invalidateCustomer(user.id);
+    revalidatePath('/customer', 'layout');
     revalidatePath('/customer/bookings');
     return { message: 'Your appointment has been cancelled successfully.' };
   } catch (error) {
@@ -271,7 +221,7 @@ export async function cancelCustomerAppointment(_: FormState, formData: FormData
 export async function rescheduleCustomerAppointment(_: FormState, formData: FormData): Promise<FormState> {
   try {
     await requireSameOrigin();
-    const user = await requireAuthenticatedUser();
+    const user = await requireCustomerUser();
     await rateLimit('customer-reschedule', user.id, 20);
 
     const appointmentId = z.string().uuid().parse(formData.get('appointmentId'));
@@ -283,9 +233,10 @@ export async function rescheduleCustomerAppointment(_: FormState, formData: Form
     }
 
     await db.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM app."Appointment" WHERE id=${appointmentId}::uuid AND "customerUserId"=${user.id}::uuid FOR UPDATE`;
       const appt = await tx.appointment.findFirst({
         where: { id: appointmentId, customerUserId: user.id },
-        select: { id: true, salonId: true, branchId: true, assignedUserId: true, durationMinutes: true, status: true },
+        select: { id: true, salonId: true, branchId: true, assignedUserId: true, startsAt: true, durationMinutes: true, status: true },
       });
 
       if (!appt) throw new DomainError('Booking not found.');
@@ -293,28 +244,11 @@ export async function rescheduleCustomerAppointment(_: FormState, formData: Form
         throw new DomainError(`Cannot reschedule an appointment that is already ${appt.status.replace('_', ' ')}.`);
       }
 
-      const newEndsAt = new Date(newStartsAt.getTime() + appt.durationMinutes * 60000);
-
-      // Check conflict for assigned stylist
-      if (appt.assignedUserId) {
-        const conflict = await tx.appointment.findFirst({
-          where: {
-            id: { not: appointmentId },
-            salonId: appt.salonId,
-            assignedUserId: appt.assignedUserId,
-            status: { notIn: ['cancelled', 'no_show'] },
-            startsAt: { lt: newEndsAt },
-          },
-          select: { startsAt: true, durationMinutes: true },
-        });
-
-        if (conflict) {
-          const conflictEnd = new Date(conflict.startsAt.getTime() + conflict.durationMinutes * 60000);
-          if (conflictEnd > newStartsAt) {
-            throw new DomainError('The selected time slot is conflict with another appointment.');
-          }
-        }
-      }
+      if (appt.startsAt <= new Date()) throw new DomainError('Only upcoming appointments can be changed.');
+      const date = new Date(newStartsAt.getTime() + 330 * 60000).toISOString().slice(0, 10);
+      const slots = await getCustomerBookingAvailability(appt.salonId, appt.branchId, appt.durationMinutes, appt.assignedUserId ?? undefined, date, { client: tx, excludeAppointmentId: appointmentId });
+      const slot = slots.find(s => s.isoString === newStartsAt.toISOString() && s.available);
+      if (!slot || !appt.assignedUserId) throw new DomainError('The selected time slot is no longer available.');
 
       await tx.appointment.update({
         where: { id: appointmentId },
@@ -335,7 +269,8 @@ export async function rescheduleCustomerAppointment(_: FormState, formData: Form
       });
     });
 
-    revalidatePath('/customer');
+    await invalidateCustomer(user.id);
+    revalidatePath('/customer', 'layout');
     revalidatePath('/customer/bookings');
     return { message: 'Your appointment has been rescheduled.' };
   } catch (error) {
@@ -346,7 +281,7 @@ export async function rescheduleCustomerAppointment(_: FormState, formData: Form
 export async function submitCustomerFeedback(_: FormState, formData: FormData): Promise<FormState> {
   try {
     await requireSameOrigin();
-    const user = await requireAuthenticatedUser();
+    const user = await requireCustomerUser();
     await rateLimit('customer-feedback', user.id, 20);
 
     const appointmentId = z.string().uuid().parse(formData.get('appointmentId'));
@@ -354,6 +289,7 @@ export async function submitCustomerFeedback(_: FormState, formData: FormData): 
     const comment = z.string().trim().max(1000).parse(formData.get('comment') || '');
 
     await db.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM app."Appointment" WHERE id=${appointmentId}::uuid AND "customerUserId"=${user.id}::uuid FOR UPDATE`;
       const appt = await tx.appointment.findFirst({
         where: { id: appointmentId, customerUserId: user.id, status: 'completed' },
         select: { id: true, salonId: true },
@@ -386,7 +322,8 @@ export async function submitCustomerFeedback(_: FormState, formData: FormData): 
       });
     });
 
-    revalidatePath('/customer');
+    await invalidateCustomer(user.id);
+    revalidatePath('/customer', 'layout');
     revalidatePath('/customer/bookings');
     return { message: 'Thank you for your feedback!' };
   } catch (error) {
@@ -397,7 +334,7 @@ export async function submitCustomerFeedback(_: FormState, formData: FormData): 
 export async function updateCustomerProfile(_: FormState, formData: FormData): Promise<FormState> {
   try {
     await requireSameOrigin();
-    const user = await requireAuthenticatedUser();
+    const user = await requireCustomerUser();
     await rateLimit('customer-profile', user.id, 30);
 
     const displayName = z.string().trim().min(2).max(120).parse(formData.get('displayName'));
@@ -416,7 +353,8 @@ export async function updateCustomerProfile(_: FormState, formData: FormData): P
       });
     });
 
-    revalidatePath('/customer');
+    await invalidateCustomer(user.id);
+    revalidatePath('/customer', 'layout');
     revalidatePath('/customer/profile');
     return { message: 'Your profile has been updated.' };
   } catch (error) {

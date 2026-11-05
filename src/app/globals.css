@@ -1248,6 +1248,7 @@
   margin: 0 auto;
   padding: 14px 20px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
@@ -1313,6 +1314,8 @@
 
 .customer-header-actions {
   display: flex;
+  flex-wrap: wrap;
+  max-width: 100%;
   align-items: center;
   gap: 10px;
 }

@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 const m = vi.hoisted(() => ({ list: vi.fn() }));
 vi.mock('@/lib/db', () => ({ db: { $queryRaw: m.list } }));
 vi.mock('@/lib/auth/page-guard', () => ({ guard: async () => ({ id: 'user-a', displayName: 'Member' }) }));
-vi.mock('@/lib/authorization/server', () => ({ requireAuthenticatedUser: vi.fn() }));
+vi.mock('@/lib/authorization/server', () => ({ requireSalonUser: vi.fn() }));
 vi.mock('@/server/workspaces', () => ({ selectWorkspace: vi.fn() }));
 vi.mock('@/components/dashboard', () => ({ Dashboard: ({ children }: { children: React.ReactNode }) => React.createElement('main', {}, children) }));
 import SelectWorkspace from '@/app/salon/select-workspace/page';

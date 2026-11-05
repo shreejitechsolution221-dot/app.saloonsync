@@ -6,6 +6,8 @@ import { CustomerIcon } from './icons';
 import { bookCustomerAppointment } from '@/server/customer-booking-actions';
 import type { CustomerSalonDetail, TimeSlot } from '@/lib/customer/types';
 
+const salonDate = (date: Date) => new Date(date.getTime() + 330 * 60000).toISOString().slice(0, 10);
+
 type Props = {
   salons: CustomerSalonDetail[];
   preselectedSalonId?: string;
@@ -34,12 +36,12 @@ export function BookingWizard({
   const [selectedSalonId, setSelectedSalonId] = useState<string>(initialSalon?.id || '');
   const [selectedBranchId, setSelectedBranchId] = useState<string>(initialBranch?.id || '');
   const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>(
-    preselectedServiceId ? [preselectedServiceId] : [],
+    initialSalon?.services.some(s => s.id === preselectedServiceId) ? [preselectedServiceId!] : [],
   );
-  const [selectedStaffId, setSelectedStaffId] = useState<string>(preselectedStaffId || '');
+  const [selectedStaffId, setSelectedStaffId] = useState<string>(initialSalon?.staff.some(s => s.userId === preselectedStaffId) ? preselectedStaffId! : '');
   const [selectedDate, setSelectedDate] = useState<string>(() => {
     const tomorrow = new Date(Date.now() + 86400000);
-    return tomorrow.toISOString().split('T')[0];
+    return salonDate(tomorrow);
   });
   const [selectedSlot, setSelectedSlot] = useState<TimeSlot | null>(null);
   const [slots, setSlots] = useState<TimeSlot[]>([]);
@@ -64,51 +66,57 @@ export function BookingWizard({
   const today = new Date();
   for (let i = 0; i < 14; i++) {
     const d = new Date(today.getTime() + i * 86400000);
-    const dateStr = d.toISOString().split('T')[0];
-    const dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
-    const dayNum = d.getDate();
-    const label = i === 0 ? 'Today' : i === 1 ? 'Tomorrow' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const dateStr = salonDate(d);
+    const dayName = d.toLocaleDateString('en-US', { weekday: 'short', timeZone: 'Asia/Kolkata' });
+    const dayNum = Number(new Intl.DateTimeFormat('en-US', { day: 'numeric', timeZone: 'Asia/Kolkata' }).format(d));
+    const label = i === 0 ? 'Today' : i === 1 ? 'Tomorrow' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'Asia/Kolkata' });
     availableDates.push({ dateStr, label, dayName, dayNum });
   }
 
   // Fetch slots whenever branch, duration, staff, or date changes
   useEffect(() => {
+    const controller = new AbortController();
+    setSelectedSlot(null);
     if (!selectedSalonId || !selectedBranchId || totalDuration === 0) {
       setSlots([]);
+      setLoadingSlots(false);
       return;
     }
 
     setLoadingSlots(true);
+    setActionError(null);
     const params = new URLSearchParams({
       salonId: selectedSalonId,
       branchId: selectedBranchId,
       durationMinutes: String(totalDuration),
       date: selectedDate,
+      serviceIds: selectedServiceIds.join(','),
     });
     if (selectedStaffId) {
       params.set('staffId', selectedStaffId);
     }
 
-    fetch(`/api/customer/availability?${params.toString()}`)
-      .then((res) => res.json())
+    fetch(`/api/customer/availability?${params.toString()}`, { signal: controller.signal })
+      .then((res) => { if (!res.ok) throw new Error("Unable to check availability."); return res.json(); })
       .then((data) => {
+        if (controller.signal.aborted) return;
         if (data.slots && Array.isArray(data.slots)) {
           setSlots(data.slots);
-          // If previous selected slot is no longer valid, reset
-          if (selectedSlot && !data.slots.some((s: TimeSlot) => s.isoString === selectedSlot.isoString && s.available)) {
-            setSelectedSlot(null);
-          }
+
         } else {
           setSlots([]);
         }
       })
       .catch(() => {
+        if (controller.signal.aborted) return;
+        setActionError("Unable to check availability. Please try again.");
         setSlots([]);
       })
       .finally(() => {
-        setLoadingSlots(false);
+        if (!controller.signal.aborted) setLoadingSlots(false);
       });
-  }, [selectedSalonId, selectedBranchId, totalDuration, selectedStaffId, selectedDate]);
+    return () => controller.abort();
+  }, [selectedSalonId, selectedBranchId, totalDuration, selectedStaffId, selectedDate, selectedServiceIds]);
 
   const toggleService = (serviceId: string) => {
     setSelectedServiceIds((prev) =>
@@ -117,7 +125,7 @@ export function BookingWizard({
   };
 
   const handleConfirmBooking = () => {
-    if (!selectedSlot) return;
+    if (!selectedSlot || loadingSlots || !selectedSlot.available) return;
     setActionError(null);
 
     const formData = new FormData();
@@ -170,6 +178,7 @@ export function BookingWizard({
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    window.URL.revokeObjectURL(link.href);
   };
 
   return (
@@ -187,7 +196,7 @@ export function BookingWizard({
           <div
             key={s.num}
             className={`wizard-step-node ${step === s.num ? 'current' : step > s.num ? 'completed' : ''}`}
-            onClick={() => s.num < step && setStep(s.num)}
+            onClick={() => step < 7 && !isPending && s.num < step && setStep(s.num)}
           >
             <span className="step-circle">{step > s.num ? '✓' : s.num}</span>
             <span className="step-label">{s.label}</span>
@@ -216,6 +225,10 @@ export function BookingWizard({
                 className={`salon-option-card ${selectedSalonId === salon.id ? 'selected' : ''}`}
                 onClick={() => {
                   setSelectedSalonId(salon.id);
+                  setSelectedServiceIds([]);
+                  setSelectedStaffId('');
+                  setSelectedBranchId('');
+                  setSelectedSlot(null);
                   if (salon.branches.length > 0) {
                     setSelectedBranchId(salon.branches[0].id);
                   }
@@ -292,6 +305,7 @@ export function BookingWizard({
                     <input
                       type="checkbox"
                       checked={isChecked}
+                      onClick={(event) => event.stopPropagation()}
                       onChange={() => toggleService(srv.id)}
                       aria-label={`Select ${srv.name}`}
                     />
@@ -469,7 +483,7 @@ export function BookingWizard({
             <button
               type="button"
               className="primary"
-              disabled={!selectedSlot}
+              disabled={!selectedSlot || loadingSlots}
               onClick={() => setStep(5)}
             >
               Enter Details <span>→</span>

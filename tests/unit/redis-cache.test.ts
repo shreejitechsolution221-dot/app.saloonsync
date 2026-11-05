@@ -86,6 +86,48 @@ describe('Redis Cache Helper and Invalidation', () => {
     mocks.del.mockRejectedValueOnce(new Error('Quota exceeded'));
     await expect(invalidate('salon:123:layout')).resolves.toBeUndefined();
   });
+
+  it('shares simultaneous misses and releases the pending read afterward', async () => {
+    mocks.get.mockResolvedValue(null);
+    mocks.set.mockResolvedValue('OK');
+    const loader = vi.fn().mockResolvedValue({ fresh: true });
+    const results = await Promise.all(Array.from({ length: 20 }, () => cached('burst', 60, loader)));
+    expect(results).toHaveLength(20);
+    expect(loader).toHaveBeenCalledOnce();
+    expect(mocks.get).toHaveBeenCalledOnce();
+    expect(mocks.set).toHaveBeenCalledOnce();
+    await cached('burst', 60, loader);
+    expect(loader).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not write to Redis after a failed read', async () => {
+    mocks.get.mockRejectedValueOnce(new Error('offline'));
+    await expect(cached('offline', 60, async () => 'database')).resolves.toBe('database');
+    expect(mocks.set).not.toHaveBeenCalled();
+  });
+
+  it('does not repopulate an invalidated pending query', async () => {
+    mocks.get.mockResolvedValue(null);
+    let finish!: (value: string) => void;
+    let started!: () => void;
+    const loading = new Promise<void>(resolve => { started = resolve; });
+    const pending = cached('mutation', 60, () => {
+      started();
+      return new Promise<string>(resolve => { finish = resolve; });
+    });
+    await loading;
+    await invalidate('mutation');
+    finish('old data');
+    await expect(pending).resolves.toBe('old data');
+    expect(mocks.set).not.toHaveBeenCalled();
+  });
+
+  it('retries the database after a loader rejects', async () => {
+    mocks.get.mockResolvedValue(null);
+    mocks.set.mockResolvedValue('OK');
+    await expect(cached('retry', 60, async () => { throw new Error('database failed'); })).rejects.toThrow('database failed');
+    await expect(cached('retry', 60, async () => 'recovered')).resolves.toBe('recovered');
+  });
 });
 
 describe('Tenant Isolation', () => {

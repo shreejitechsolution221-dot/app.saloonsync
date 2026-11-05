@@ -1,30 +1,26 @@
 import Link from 'next/link';
 import { guard } from '@/lib/auth/page-guard';
-import { requireAuthenticatedUser } from '@/lib/authorization/server';
+import { requireCustomerUser } from '@/lib/authorization/server';
 import { db } from '@/lib/db';
 import { CustomerIcon } from '@/components/customer/icons';
 
 export const dynamic = 'force-dynamic';
 
 export default async function CustomerNotificationsPage() {
-  const user = await guard('customer', requireAuthenticatedUser);
+  const user = await guard('customer', requireCustomerUser);
 
-  // Fetch recent appointments and audit events for customer
-  const [appointments, auditEvents] = await Promise.all([
+  // Derive recent booking activity from the customer’s appointments.
+  const [appointments] = await Promise.all([
     db.appointment.findMany({
       where: { customerUserId: user.id },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { updatedAt: 'desc' },
       take: 5,
       include: {
         salon: { select: { name: true } },
         branch: { select: { name: true } },
       },
     }),
-    db.auditEvent.findMany({
-      where: { actorUserId: user.id },
-      orderBy: { occurredAt: 'desc' },
-      take: 10,
-    }),
+
   ]);
 
   const notifications = appointments.map((a) => {
@@ -42,7 +38,7 @@ export default async function CustomerNotificationsPage() {
         dateStyle: 'medium',
         timeStyle: 'short',
       })}`,
-      time: a.createdAt.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'short', timeStyle: 'short' }),
+      time: a.updatedAt.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'short', timeStyle: 'short' }),
       kind: isCancelled ? 'alert' : isCompleted ? 'success' : 'info',
     };
   });
@@ -95,38 +91,11 @@ export default async function CustomerNotificationsPage() {
               <h3>Notification Channels</h3>
             </div>
             <p className="muted" style={{ fontSize: 13, marginBottom: 18 }}>
-              Control how you receive appointment confirmations and reminders.
+              Appointment updates are available in your booking history.
             </p>
 
-            <div className="channel-toggles-list">
-              <label className="toggle-row">
-                <div>
-                  <strong>WhatsApp Confirmations</strong>
-                  <p className="muted">Receive your booking reference and Google Maps link via WhatsApp.</p>
-                </div>
-                <input type="checkbox" defaultChecked />
-              </label>
-
-              <label className="toggle-row">
-                <div>
-                  <strong>24-Hour SMS Reminders</strong>
-                  <p className="muted">A brief text reminder 24 hours before your scheduled appointment.</p>
-                </div>
-                <input type="checkbox" defaultChecked />
-              </label>
-
-              <label className="toggle-row">
-                <div>
-                  <strong>Email Receipts & Notes</strong>
-                  <p className="muted">Itemized digital bill and stylist formula notes after checkout.</p>
-                </div>
-                <input type="checkbox" defaultChecked />
-              </label>
-            </div>
-
-            <p className="footnote muted" style={{ fontSize: 11, marginTop: 18 }}>
-              Preferences are saved with your GlowDesk guest profile. You can opt out anytime.
-            </p>
+            <p className="muted">Choose WhatsApp consent when booking your appointment. Message delivery depends on your salon’s notification setup.</p>
+            <Link href="/customer/bookings" className="secondary">View your bookings</Link>
           </div>
         </aside>
       </div>

@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { guard } from '@/lib/auth/page-guard';
-import { requireAuthenticatedUser } from '@/lib/authorization/server';
+import { requireCustomerUser } from '@/lib/authorization/server';
 import { db } from '@/lib/db';
 import { logout } from '@/server/auth-actions';
 import { CustomerProfileEditForm } from '@/components/customer/profile-form';
@@ -9,7 +9,7 @@ import { CustomerIcon } from '@/components/customer/icons';
 export const dynamic = 'force-dynamic';
 
 export default async function CustomerProfilePage() {
-  const user = await guard('customer', requireAuthenticatedUser);
+  const user = await guard('customer', requireCustomerUser);
   const profile = await db.customerProfile.findUnique({
     where: { userId: user.id },
     select: { phone: true },

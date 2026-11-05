@@ -2,7 +2,7 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import { AccessError } from '@/lib/authorization/server';
 import { NextRequest } from 'next/server';
 const mocks = vi.hoisted(() => ({ auth: vi.fn(), branch: vi.fn(), booking: vi.fn(), list: vi.fn() }));
-vi.mock('@/lib/authorization/server', () => ({ requireAuthenticatedUser: mocks.auth, requireBranchAccess: mocks.branch, AccessError: class AccessError extends Error { constructor(public code: string) { super(code); } } }));
+vi.mock('@/lib/authorization/server', () => ({ requireCustomerUser: mocks.auth, requireBranchAccess: mocks.branch, AccessError: class AccessError extends Error { constructor(public code: string) { super(code); } } }));
 vi.mock('@/lib/db', () => ({ db: { appointment: { findFirst: mocks.booking, findMany: mocks.list } } }));
 import { GET as getBooking } from '@/app/api/customer/bookings/[bookingId]/route';
 import { GET as getBranch } from '@/app/api/salons/[salonId]/branches/[branchId]/appointments/route';
@@ -11,6 +11,12 @@ beforeEach(() => { vi.resetAllMocks(); mocks.auth.mockResolvedValue({ id: 'custo
 it('scopes direct customer API requests by authenticated identity', async () => {
   const result = await getBooking(new NextRequest('https://app.test'), { params: Promise.resolve({ bookingId: id }) });
   expect(result.status).toBe(404); expect(mocks.booking.mock.calls[0][0].where).toEqual({ id, customerUserId: 'customer-a' });
+});
+it('denies direct customer API requests from authenticated accounts with the wrong role', async () => {
+  mocks.auth.mockRejectedValue(new AccessError('FORBIDDEN'));
+  const result = await getBooking(new NextRequest('https://app.test'), { params: Promise.resolve({ bookingId: id }) });
+  expect(result.status).toBe(403);
+  expect(mocks.booking).not.toHaveBeenCalled();
 });
 it('does not query appointments when direct branch access is denied', async () => {
   mocks.branch.mockRejectedValue(new AccessError('FORBIDDEN'));

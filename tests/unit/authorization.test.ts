@@ -2,7 +2,9 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 const mocks = vi.hoisted(() => ({ getUser: vi.fn(), assurance: vi.fn(), user: { upsert: vi.fn(), findUnique: vi.fn() }, membership: { findUnique: vi.fn() }, privilege: { findUnique: vi.fn() }, branch: { findFirst: vi.fn() } }));
 vi.mock('@/lib/auth/supabase', () => ({ supabase: async () => ({ auth: { getUser: mocks.getUser, mfa: { getAuthenticatorAssuranceLevel: mocks.assurance } } }) }));
 vi.mock('@/lib/db', () => ({ db: { user: mocks.user, salonMembership: mocks.membership, platformPrivilege: mocks.privilege, branch: mocks.branch } }));
-import { requireAuthenticatedUser, requireBranchAccess, requirePlatformPrivilege, requireSalonMembership } from '@/lib/authorization/server';
+import { requireAuthenticatedUser, requireCustomerUser, requireSalonUser, requireBranchAccess, requirePlatformPrivilege, requireSalonMembership } from '@/lib/authorization/server';
+const portal = vi.hoisted(() => ({ getPortalAccess: vi.fn() }));
+vi.mock('@/lib/auth/portal-access', () => portal);
 beforeEach(() => {
   vi.resetAllMocks();
   mocks.user.findUnique.mockResolvedValue(null);
@@ -11,6 +13,22 @@ beforeEach(() => {
   mocks.membership.findUnique.mockResolvedValue({ role: 'staff', status: 'active', branchScope: 'selected', branches: [{ branchId: 'b1' }], salon: { status: 'active' } });
 });
 describe('current server authorization', () => {
+  it('denies salon onboarding to customer-only identities', async () => {
+    portal.getPortalAccess.mockResolvedValue({ customer: true, salon: false, platform: false });
+    await expect(requireSalonUser()).rejects.toThrow('FORBIDDEN');
+  });
+  it('allows registered salon identities into salon onboarding', async () => {
+    portal.getPortalAccess.mockResolvedValue({ customer: false, salon: true, platform: false });
+    expect((await requireSalonUser()).id).toBe('u');
+  });
+  it('denies customer operations even for authenticated salon owners', async () => {
+    portal.getPortalAccess.mockResolvedValue({ customer: false, salon: true, platform: false });
+    await expect(requireCustomerUser()).rejects.toThrow('FORBIDDEN');
+  });
+  it('permits customer operations only with current customer authorization', async () => {
+    portal.getPortalAccess.mockResolvedValue({ customer: true, salon: false, platform: false });
+    expect((await requireCustomerUser()).id).toBe('u');
+  });
   it('reads current existing profiles without an unnecessary write',async()=>{
     mocks.user.findUnique.mockResolvedValue({id:'u',displayName:'User',disabledAt:null});
     expect((await requireAuthenticatedUser()).id).toBe('u');expect(mocks.user.upsert).not.toHaveBeenCalled();

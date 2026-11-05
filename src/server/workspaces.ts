@@ -5,7 +5,7 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
 import { db } from '@/lib/db';
-import { AccessError, requireAuthenticatedUser, requirePermission } from '@/lib/authorization/server';
+import { AccessError, requireAuthenticatedUser, requireSalonUser, requirePermission } from '@/lib/authorization/server';
 import { canInvite } from '@/lib/authorization/policy';
 import { invitationSchema, onboardingSchema } from '@/lib/validation/auth';
 import { legalConfig } from '@/lib/auth/config';
@@ -30,7 +30,7 @@ export async function createWorkspace(_state: FormState, form: FormData): Promis
   if (!legal.ready || form.get('consent') !== 'on') return { error: 'Applicable service terms must be available and accepted.' };
   let salonId: string;
   try {
-    await requireSameOrigin(); const user = await requireAuthenticatedUser(); await rateLimit('onboarding', user.id, 5);
+    await requireSameOrigin(); const user = await requireSalonUser(); await rateLimit('onboarding', user.id, 5);
     // Namespace the retry key by identity; a supplied key cannot attach another user.
     const key = `${user.id}:${parsed.data.key}`;
     const salon = await db.$transaction(async tx => {

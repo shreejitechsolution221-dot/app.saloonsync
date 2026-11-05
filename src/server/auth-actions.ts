@@ -6,10 +6,11 @@ import { z } from 'zod';
 import { db } from '@/lib/db';
 import { supabase } from '@/lib/auth/supabase';
 import { legalConfig, passwordMinimum } from '@/lib/auth/config';
-import { portalOf, safeDestination } from '@/lib/auth/redirects';
+import { portalOf, portalDestination } from '@/lib/auth/redirects';
+import { authorizePortalSession } from '@/lib/auth/portal-access';
 import { loginSchema, registrationSchema, emailSchema } from '@/lib/validation/auth';
 import { appOrigin, rateLimit, requireSameOrigin } from '@/lib/security';
-import { requireAuthenticatedUser } from '@/lib/authorization/server';
+import { requireCustomerUser } from '@/lib/authorization/server';
 import { emailPolicyError, assertSignupEmail } from '@/lib/email/signup-policy';
 import { registeredEmailExists } from '@/lib/auth/registered-email';
 import { getClientIp, limitLogin, limitRegister } from './rate-limit';
@@ -27,12 +28,20 @@ export async function authenticate(_state: FormState, form: FormData): Promise<F
     if (!loginAllowed) return { error: 'Too many attempts, try again in a minute' };
     const client = await supabase();
     const authStarted = performance.now();
-    const { error } = await client.auth.signInWithPassword(parsed.data);
+    const { data, error } = await client.auth.signInWithPassword(parsed.data);
     if (process.env.DB_TIMING_DEBUG === '1') console.info(JSON.stringify({ event: 'login.provider_timing', durationMs: performance.now() - authStarted }));
     if (error) return { error: 'Unable to sign in. Check your details and verify your email, or reset your password.' };
-    const store = await cookies(); store.delete('recovery_user'); store.delete('login_otp'); store.delete('workspace');
+    const store = await cookies();
+    const invitationToken = store.get('invitation')?.value;
+    const invitation = invitationToken && data.user?.email ? {
+      token: invitationToken, email: data.user.email, destination: portalDestination(form.get('next'), portal),
+    } : undefined;
+    if (!data.user || !await authorizePortalSession(client, data.user.id, portal, invitation)) {
+      return { error: `This account cannot access the ${portal === 'salon' ? 'salon team' : portal} portal. Use the login for your account role.` };
+    }
+    store.delete('recovery_user'); store.delete('login_otp'); store.delete('workspace');
   } catch { return unavailable; }
-  redirect(safeDestination(form.get('next'), `/${portal}`));
+  redirect(portalDestination(form.get('next'), portal));
 }
 export async function register(_state: FormState, form: FormData): Promise<FormState> {
   const legal = legalConfig();
@@ -128,7 +137,7 @@ export async function updateCustomer(_state: FormState, form: FormData): Promise
   const parsed = z.object({ name: z.string().trim().min(2).max(120), phone: z.string().trim().max(30) }).safeParse(Object.fromEntries(form));
   if (!parsed.success) return { error: 'Enter a name and a valid phone number.' };
   try {
-    await requireSameOrigin(); const user = await requireAuthenticatedUser();
+    await requireSameOrigin(); const user = await requireCustomerUser();
     await db.$transaction([db.user.update({ where: { id: user.id }, data: { displayName: parsed.data.name } }), db.customerProfile.upsert({ where: { userId: user.id }, update: { phone: parsed.data.phone }, create: { userId: user.id, phone: parsed.data.phone } })]);
     return { message: 'Profile updated.' };
   } catch { return unavailable; }
@@ -171,6 +180,10 @@ export async function verifyLoginOtp(_state: FormState, form: FormData): Promise
     const client = await supabase();
     const { data, error } = await client.auth.verifyOtp({ email: context.email, token, type: 'email' });
     if (error || !data.user || !data.session) return { error: 'This code is invalid or expired. Try again or request a new code.' };
+    if (!await authorizePortalSession(client, data.user.id, context.portal)) {
+      store.delete('login_otp');
+      return { error: 'This account cannot access this portal. Use the login for your account role.' };
+    }
     store.delete('login_otp'); store.delete('workspace'); store.delete('recovery_user');
     destination = `/${context.portal}`;
   } catch { return unavailable; }

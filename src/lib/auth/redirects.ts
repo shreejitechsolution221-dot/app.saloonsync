@@ -7,3 +7,7 @@ const allowed = new Set(['/platform', '/salon', '/salon/select-workspace', '/sal
 export function safeDestination(value: unknown, fallback = '/salon') {
   return typeof value === 'string' && allowed.has(value) ? value : fallback;
 }
+export function portalDestination(value: unknown, portal: Portal) {
+  const destination = safeDestination(value, `/${portal}`);
+  return destination === `/${portal}` || destination.startsWith(`/${portal}/`) ? destination : `/${portal}`;
+}

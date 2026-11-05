@@ -3,6 +3,8 @@ import {afterEach,beforeEach,expect,it,vi} from 'vitest';
 const m=vi.hoisted(()=>({Client:vi.fn(function(){return {$disconnect:vi.fn().mockResolvedValue(undefined),$on:vi.fn(),generation:'current'};}),Adapter:vi.fn()}));
 vi.mock('@/generated/prisma/client',()=>({PrismaClient:m.Client,Prisma:{InvitationScalarFieldEnum:{id:'id',staffProfileId:'staffProfileId'}}}));
 vi.mock('@prisma/adapter-pg',()=>({PrismaPg:m.Adapter}));
+const vercel = vi.hoisted(() => ({ attachDatabasePool: vi.fn() }));
+vi.mock('@vercel/functions', () => vercel);
 const cache=globalThis as unknown as {prisma?:unknown;prismaConstructor?:unknown;prismaPool?:unknown;prismaFields?:string;prismaConnection?:string};
 const currentFields=JSON.stringify([['InvitationScalarFieldEnum',{id:'id',staffProfileId:'staffProfileId'}]]);
 beforeEach(()=>{vi.resetModules();vi.clearAllMocks();vi.stubEnv('NODE_ENV','development');delete cache.prisma;delete cache.prismaConstructor;delete cache.prismaPool;cache.prismaFields=currentFields;cache.prismaConnection=createHash('sha256').update(process.env.DATABASE_URL??'').digest('hex');});
@@ -35,6 +37,15 @@ it('does not retain extra idle connections in production',async()=>{
  const {databasePoolMetrics}=await import('@/lib/db');
  expect(cache.prismaPool).toBeUndefined();
  expect(databasePoolMetrics()).toContain('saloonsync_db_pool_total 0');
+});
+it('attaches the database pool to the Vercel lifecycle only on Vercel', async () => {
+ vi.stubEnv('VERCEL', '1');
+ await import('@/lib/db');
+ expect(vercel.attachDatabasePool).toHaveBeenCalledOnce();
+ expect(vercel.attachDatabasePool).toHaveBeenCalledWith(cache.prismaPool);
+ vi.resetModules();
+ await import('@/lib/db');
+ expect(vercel.attachDatabasePool).toHaveBeenCalledOnce();
 });
 it('logs opt-in query timings without parameters or literal values',async()=>{
  vi.stubEnv('DB_TIMING_DEBUG','1');const log=vi.spyOn(console,'info').mockImplementation(()=>{});

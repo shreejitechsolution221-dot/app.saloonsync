@@ -1,5 +1,8 @@
 # Saloonsync
 
+Vercel hosting, Redis configuration, and runtime connection pooling:
+[hosting guide](docs/vercel-hosting.md).
+
 PERF-01 implementation and limits: [baseline](docs/performance/PERF-01-BASELINE.md),
 [database/pools](docs/performance/PERF-01-DATABASE.md),
 [monitoring](docs/performance/PERF-01-MONITORING.md),

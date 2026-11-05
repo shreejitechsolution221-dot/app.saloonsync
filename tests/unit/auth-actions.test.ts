@@ -9,11 +9,31 @@ vi.mock('@/lib/security', () => ({ requireSameOrigin: async () => {}, rateLimit:
 vi.mock('@/lib/email/signup-policy', () => ({ emailPolicyError: () => null, assertSignupEmail: async () => {} }));
 vi.mock('@/lib/auth/registered-email', () => ({ registeredEmailExists: m.registeredEmailExists }));
 import { authenticate, forgotPassword, register, resetPassword, logout, requestLoginOtp, verifyLoginOtp } from '@/server/auth-actions';
+const portalAuth = vi.hoisted(() => ({ authorizePortalSession: vi.fn() }));
+vi.mock('@/lib/auth/portal-access', () => portalAuth);
 function form(values: Record<string,string>) { const f = new FormData(); Object.entries(values).forEach(([k,v]) => f.set(k,v)); return f; }
-beforeEach(() => { vi.resetAllMocks(); m.legal.mockReturnValue({ ready: false }); m.registeredEmailExists.mockResolvedValue(true); });
+beforeEach(() => { vi.resetAllMocks(); portalAuth.authorizePortalSession.mockResolvedValue(true); m.legal.mockReturnValue({ ready: false }); m.registeredEmailExists.mockResolvedValue(true); });
 it.each(['salon', 'customer', 'platform'])('routes %s login only after provider success', async portal => {
-  m.signIn.mockResolvedValue({ error: null });
+  m.signIn.mockResolvedValue({ data: { user: { id: 'u' } }, error: null });
   await expect(authenticate({}, form({ portal, email: 'a@example.test', password: 'password', next: '//evil.test' }))).rejects.toThrow(`REDIRECT:/${portal}`);
+});
+it('rejects a valid password when the account does not belong to the selected portal', async () => {
+  m.signIn.mockResolvedValue({ data: { user: { id: 'owner' } }, error: null });
+  portalAuth.authorizePortalSession.mockResolvedValue(false);
+  const result = await authenticate({}, form({ portal: 'customer', email: 'owner@example.test', password: 'password' }));
+  expect(result.error).toContain('account role');
+  expect(portalAuth.authorizePortalSession).toHaveBeenCalledWith(expect.anything(), 'owner', 'customer', undefined);
+});
+it('prevents next from crossing into another portal after login', async () => {
+  m.signIn.mockResolvedValue({ data: { user: { id: 'u' } }, error: null });
+  await expect(authenticate({}, form({ portal: 'customer', email: 'customer@example.test', password: 'password', next: '/salon/onboarding' }))).rejects.toThrow('REDIRECT:/customer');
+});
+it('rejects a valid OTP when the account belongs to another portal', async () => {
+  m.cookie.get.mockReturnValue({ value: JSON.stringify({ email: 'owner@example.test', portal: 'customer', sentAt: Date.now() }) });
+  m.otpVerify.mockResolvedValue({ data: { user: { id: 'owner' }, session: {} }, error: null });
+  portalAuth.authorizePortalSession.mockResolvedValue(false);
+  expect((await verifyLoginOtp({}, form({ token: '123456' }))).error).toContain('account role');
+  expect(m.cookie.delete).toHaveBeenCalledWith('login_otp');
 });
 it('does not enumerate invalid account versus invalid password', async () => {
   m.signIn.mockResolvedValueOnce({ error: { message: 'Unknown account' } }).mockResolvedValueOnce({ error: { message: 'Wrong password' } });

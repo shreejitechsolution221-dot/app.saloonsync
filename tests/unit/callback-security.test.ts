@@ -1,11 +1,13 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 const m=vi.hoisted(()=>({exchange:vi.fn(),get:vi.fn(),set:vi.fn(),delete:vi.fn(),has:vi.fn()}));
+const portalAuth = vi.hoisted(() => ({ authorizePortalSession: vi.fn() }));
+vi.mock('@/lib/auth/portal-access', () => portalAuth);
 vi.mock('next/headers',()=>({cookies:async()=>({get:m.get,set:m.set,delete:m.delete,has:m.has})}));
 vi.mock('@/lib/auth/supabase',()=>({supabase:async()=>({auth:{exchangeCodeForSession:m.exchange}})}));
 vi.mock('@/lib/security',()=>({appOrigin:()=> 'http://localhost:3000'}));
 import {GET} from '@/app/auth/callback/route';
-beforeEach(()=>{vi.resetAllMocks();});
+beforeEach(()=>{vi.resetAllMocks();portalAuth.authorizePortalSession.mockResolvedValue(true);});
 it('never grants recovery context from a forged next parameter',async()=>{
  m.exchange.mockResolvedValue({data:{user:{id:'u'},session:{},redirectType:null},error:null});
  const r=await GET(new NextRequest('http://localhost:3000/auth/callback?code=test&next=/auth/reset-password&portal=platform'));
@@ -25,4 +27,11 @@ it('provider failure never establishes recovery context',async()=>{
  m.exchange.mockResolvedValue({data:{user:null,session:null},error:{code:'invalid'}});
  const r=await GET(new NextRequest('http://localhost:3000/auth/callback?code=test&next=/auth/reset-password'));
  expect(r.headers.get('location')).toContain('/auth/forgot-password');expect(m.set).not.toHaveBeenCalled();
+});
+it('rejects email link login to a portal outside the account role', async () => {
+ m.exchange.mockResolvedValue({data:{user:{id:'owner'},session:{},redirectType:null},error:null});
+ portalAuth.authorizePortalSession.mockResolvedValue(false);
+ const r = await GET(new NextRequest('http://localhost:3000/auth/callback?code=test&next=/customer'));
+ expect(r.headers.get('location')).toBe('http://localhost:3000/customer/login?error=role');
+ expect(portalAuth.authorizePortalSession).toHaveBeenCalledWith(expect.anything(), 'owner', 'customer');
 });

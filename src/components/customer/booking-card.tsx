@@ -128,6 +128,7 @@ export function BookingCard({
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    window.URL.revokeObjectURL(link.href);
   };
 
   return (

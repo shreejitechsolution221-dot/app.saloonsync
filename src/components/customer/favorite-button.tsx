@@ -30,7 +30,8 @@ export function FavoriteButton({
     e.preventDefault();
     e.stopPropagation();
     try {
-      const stored: string[] = JSON.parse(localStorage.getItem(key) || '[]');
+      const raw: unknown = JSON.parse(localStorage.getItem(key) || '[]');
+      const stored: string[] = Array.isArray(raw) ? raw.filter((item): item is string => typeof item === 'string') : [];
       let updated: string[];
       if (stored.includes(id)) {
         updated = stored.filter((item) => item !== id);

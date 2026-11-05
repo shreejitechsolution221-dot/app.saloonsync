@@ -1,6 +1,5 @@
 import Link from 'next/link';
-import { authConfigured } from '@/lib/auth/config';
-import { supabase } from '@/lib/auth/supabase';
+import { optionalCustomerUser } from '@/lib/customer/identity';
 import { getSalonProfileData } from '@/lib/customer/queries';
 import { BookingWizard } from '@/components/customer/booking-wizard';
 import { CustomerIcon } from '@/components/customer/icons';
@@ -15,32 +14,10 @@ export default async function CustomerBookPage({
 }) {
   let customerProfile = { displayName: '', phone: '', email: '' };
 
-  if (authConfigured()) {
-    try {
-      const client = await supabase();
-      const {
-        data: { user },
-      } = await client.auth.getUser();
-      if (user) {
-        const dbUser = await db.user.findUnique({
-          where: { id: user.id },
-          select: { id: true, displayName: true, mobileNumber: true },
-        });
-        if (dbUser) {
-          const profile = await db.customerProfile.findUnique({
-            where: { userId: dbUser.id },
-            select: { phone: true },
-          });
-          customerProfile = {
-            displayName: dbUser.displayName || 'Member',
-            phone: profile?.phone || dbUser.mobileNumber || '',
-            email: user.email || '',
-          };
-        }
-      }
-    } catch {
-      // Unauthenticated visitor
-    }
+  const user = await optionalCustomerUser();
+  if (user) {
+    const profile = await db.customerProfile.findUnique({ where: { userId: user.id }, select: { phone: true } });
+    customerProfile = { displayName: user.displayName || 'Member', phone: profile?.phone || user.mobileNumber || '', email: user.email };
   }
 
   const params = await searchParams;

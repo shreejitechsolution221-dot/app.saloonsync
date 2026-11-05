@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { guard } from '@/lib/auth/page-guard';
-import { requireAuthenticatedUser } from '@/lib/authorization/server';
+import { requireCustomerUser } from '@/lib/authorization/server';
 import { getCustomerBookings } from '@/lib/customer/queries';
 import { BookingCard } from '@/components/customer/booking-card';
 import { CustomerIcon } from '@/components/customer/icons';
@@ -12,7 +12,7 @@ export default async function CustomerBookingsPage({
 }: {
   searchParams: Promise<{ tab?: string }>;
 }) {
-  const user = await guard('customer', requireAuthenticatedUser);
+  const user = await guard('customer', requireCustomerUser);
   const params = await searchParams;
   const { upcoming, past } = await getCustomerBookings(user.id);
   const activeTab = params.tab === 'past' ? 'past' : 'upcoming';
