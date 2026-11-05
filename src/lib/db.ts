@@ -12,11 +12,12 @@ const globalDb = globalThis as unknown as { prisma?: PrismaClient; prismaPool?: 
 const generatedFields = JSON.stringify(Object.entries(Prisma).filter(([name]) => name.endsWith('ScalarFieldEnum')).sort(([a], [b]) => a.localeCompare(b)));
 // A region/credential change must also invalidate the dev singleton. The digest
 // stays in memory and is never logged or sent to a browser.
-const connectionIdentity=createHash('sha256').update(process.env.DATABASE_URL??'').digest('hex');
+const activeDatabaseUrl = process.env.DATABASE_URL || process.env.POSTGRES_PRISMA_URL || process.env.POSTGRES_URL || '';
+const connectionIdentity=createHash('sha256').update(activeDatabaseUrl).digest('hex');
 const cached = globalDb.prismaFields === generatedFields&&globalDb.prismaConnection===connectionIdentity ? globalDb.prisma : undefined;
 // Keep one already-open connection between local page visits. This does not
 // preconnect or ping; max lifetime and connection failure handling still apply.
-const pool = cached ? globalDb.prismaPool : new Pool({ connectionString: process.env.DATABASE_URL, ...poolConfig(), min: process.env.NODE_ENV === 'development' ? 1 : 0 });
+const pool = cached ? globalDb.prismaPool : new Pool({ connectionString: activeDatabaseUrl, ...poolConfig(), min: process.env.NODE_ENV === 'development' ? 1 : 0 });
 // pg emits errors for idle sockets too. Never log connection strings or SQL.
 if (!cached) pool!.on('error', () => console.error(JSON.stringify({ event: 'database.idle_connection_error' })));
 // Release idle connections before a Vercel Fluid Compute instance suspends.

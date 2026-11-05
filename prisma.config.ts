@@ -5,7 +5,7 @@ config({ path: '.env.migrations.local', quiet: true });
 config({ quiet: true });
 // Runtime/CLI scripts use node-postgres URL options. The migration engine uses
 // sslcert/sslaccept instead; translate the CA option without weakening verification.
-let migrationUrl = process.env.DIRECT_URL || process.env.DATABASE_URL;
+let migrationUrl = process.env.DIRECT_URL || process.env.POSTGRES_URL_NON_POOLING || process.env.DATABASE_URL || process.env.POSTGRES_PRISMA_URL || process.env.POSTGRES_URL;
 if (migrationUrl) {
   const url = new URL(migrationUrl);
   const root = url.searchParams.get('sslrootcert');
