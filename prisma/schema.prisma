@@ -8,6 +8,33 @@ datasource db {
   schemas = ["app"]
 }
 
+// Platform control-plane records never contain salon-private operational data.
+model PlatformRecord {
+  id String @id @default(uuid()) @db.Uuid
+  kind String
+  key String @unique
+  title String
+  status String
+  salonId String? @db.Uuid
+  assigneeId String? @db.Uuid
+  payload Json @default("{}")
+  version Int @default(1)
+  createdBy String @db.Uuid
+  updatedBy String @db.Uuid
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+  salon Salon? @relation(fields: [salonId], references: [id], onDelete: Restrict)
+  assignee User? @relation("platformAssignee", fields: [assigneeId], references: [id], onDelete: Restrict)
+  creator User @relation("platformCreator", fields: [createdBy], references: [id], onDelete: Restrict)
+  updater User @relation("platformUpdater", fields: [updatedBy], references: [id], onDelete: Restrict)
+  @@index([kind, status, updatedAt])
+  @@index([salonId, kind])
+  @@index([assigneeId, kind, status])
+  @@index([createdBy])
+  @@index([updatedBy])
+  @@schema("app")
+}
+
 model User {
   id String @id @db.Uuid
   displayName String
@@ -23,6 +50,9 @@ model User {
   salonCustomers SalonCustomer[]
   invitations Invitation[] @relation("inviter")
   acceptedInvitations Invitation[] @relation("acceptor")
+  platformAssignments PlatformRecord[] @relation("platformAssignee")
+  platformCreated PlatformRecord[] @relation("platformCreator")
+  platformUpdated PlatformRecord[] @relation("platformUpdater")
   consents ConsentRecord[]
   events AuditEvent[]
   bookings Appointment[]
@@ -48,6 +78,8 @@ model Salon {
   services Service[]
   products Product[]
   invoices Invoice[]
+  platformRecords PlatformRecord[]
+  @@index([createdAt])
   @@schema("app")
 }
 
@@ -218,6 +250,8 @@ model AuditEvent {
   branch Branch? @relation(fields: [branchId, salonId], references: [id, salonId], onDelete: Restrict)
   @@index([salonId, occurredAt])
   @@index([actorUserId])
+  @@index([occurredAt])
+  @@index([targetType, targetId, occurredAt])
   @@index([branchId, salonId])
   @@schema("app")
 }
@@ -257,6 +291,8 @@ model Appointment {
   @@index([customerUserId, startsAt])
   @@index([salonId, assignedUserId])
   @@index([salonId, startsAt])
+  @@index([createdAt])
+  @@index([startsAt])
   @@index([salonId, assignedUserId, startsAt])
   @@index([salonId, salonCustomerId])
   @@schema("app")

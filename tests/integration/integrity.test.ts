@@ -29,6 +29,7 @@ beforeAll(async () => {
   await pg.exec(await readFile('prisma/migrations/202610310016_teammate_invitation_profile/migration.sql','utf8'));
   await pg.exec(await readFile('prisma/migrations/202610310017_checkout_loyalty/migration.sql','utf8'));
   await pg.exec(await readFile('prisma/migrations/202610310018_performance_indexes/migration.sql','utf8'));
+  await pg.exec(await readFile('prisma/migrations/202611050019_platform_console/migration.sql','utf8'));
   await pg.exec(`BEGIN;
     INSERT INTO auth.users VALUES ('${u1}'),('${u2}');
     INSERT INTO app."User" (id,"displayName","updatedAt") VALUES ('${u1}','Owner',now()),('${u2}','Other',now());
@@ -37,6 +38,25 @@ beforeAll(async () => {
     INSERT INTO app."SalonMembership" (id,"salonId","userId",role,"updatedAt") VALUES ('${m1}','${s1}','${u1}','owner',now()),(gen_random_uuid(),'${s2}','${u2}','owner',now()); COMMIT;`);
 });
 afterAll(async () => { await pg?.close(); });
+it('stores platform records behind backend-only privileges with foreign-key integrity',async()=>{
+  try {
+    await pg.exec('BEGIN');
+    await pg.query(`INSERT INTO app."PlatformRecord" (id,kind,key,title,status,"salonId","createdBy","updatedBy","updatedAt") VALUES (gen_random_uuid(),'ticket','case:test','Salon setup','open',$1,$2,$2,now())`,[s1,u1]);
+    expect((await pg.query(`SELECT title FROM app."PlatformRecord" WHERE key='case:test'`)).rows).toEqual([{title:'Salon setup'}]);
+    await pg.exec('SAVEPOINT invalid_record');
+    await expect(pg.query(`INSERT INTO app."PlatformRecord" (id,kind,key,title,status,"createdBy","updatedBy","updatedAt") VALUES (gen_random_uuid(),'unknown','invalid','Invalid','open',$1,$1,now())`,[u1])).rejects.toThrow();
+    await pg.exec('ROLLBACK TO SAVEPOINT invalid_record');
+    await pg.exec('SET LOCAL ROLE authenticated');
+    await expect(pg.query(`SELECT * FROM app."PlatformRecord"`)).rejects.toThrow('permission denied');
+  } finally { await pg.exec('ROLLBACK'); }
+});
+it('accepts specialist platform grants and rejects unrecognized privileges',async()=>{
+  try {
+    await pg.exec('BEGIN');
+    await pg.query(`INSERT INTO app."PlatformPrivilege" (id,"userId",privilege) VALUES (gen_random_uuid(),$1,'platform.support.manage')`,[u1]);
+    await expect(pg.query(`INSERT INTO app."PlatformPrivilege" (id,"userId",privilege) VALUES (gen_random_uuid(),$1,'platform.everything')`,[u1])).rejects.toThrow('privilege_name');
+  } finally { await pg.exec('ROLLBACK'); }
+});
 it('links invitations only to employee profiles in the same salon',async()=>{
  const own='f4444444-4444-4444-8444-444444444444',foreign='f5555555-5555-4555-8555-555555555555';
  try{

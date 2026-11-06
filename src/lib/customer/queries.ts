@@ -480,7 +480,7 @@ async function loadCustomerLoyaltyOffers(userId?: string) {
 
   const loyaltySummary: CustomerLoyaltyInfo[] = loyaltyAccounts.map((l) => ({
     points: l.points,
-    membershipName: l.membershipName || 'GlowDesk Club Member',
+    membershipName: l.membershipName || 'SaloonSync Club Member',
     referralCode: l.referralCode,
     salonName: salonMap.get(l.salonId) || 'Partner Salon',
   }));

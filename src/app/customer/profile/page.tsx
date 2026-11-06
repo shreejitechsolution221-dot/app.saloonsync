@@ -57,7 +57,7 @@ export default async function CustomerProfilePage() {
             <div className="privacy-info-box">
               <span className="privacy-badge">Shared Identity</span>
               <p style={{ fontSize: 13, margin: '8px 0 14px', lineHeight: 1.6 }}>
-                Your GlowDesk client account is private. Salon staff can only see your name and contact number for appointments you schedule.
+                Your SaloonSync client account is private. Salon staff can only see your name and contact number for appointments you schedule.
               </p>
               <Link href="/auth/reset-password?portal=customer" className="secondary btn-sm" style={{ display: 'inline-block' }}>
                 Change Password ↗

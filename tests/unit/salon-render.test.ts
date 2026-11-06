@@ -6,6 +6,7 @@ const mock=vi.hoisted(()=>({context:{user:{id:'owner',displayName:'Jamie Davis'}
 vi.mock('@/lib/salon/context',()=>({salonContext:async()=>mock.context,requireModule:async()=>mock.context,indiaDate:()=> '2026-10-29',dateRange:()=>({gte:new Date('2026-10-28T18:30:00Z'),lt:new Date('2026-10-29T18:30:00Z')})}));
 vi.mock('@/server/salon-actions',()=>({createAppointment:vi.fn(),changeAppointment:vi.fn(),rescheduleAppointment:vi.fn()}));
 vi.mock('@/server/auth-actions',()=>({logout:vi.fn()}));
+vi.mock('@/components/platform/notices',()=>({PlatformNotices:()=>null}));
 vi.mock('@/components/auth/layout',()=>({Wordmark:()=>React.createElement('a',{className:'wordmark',href:'/'},'saloonsync.')}));
 vi.mock('@/components/salon/forms',()=>({ActionForm:({children,submit}:{children:React.ReactNode;submit:string})=>React.createElement('form',{className:'studio-form'},children,React.createElement('button',{className:'primary'},submit)),CreatePanel:({label}:{label:string})=>React.createElement('button',{className:'primary'},'+ '+label),Field:()=>null}));
 vi.mock('@/lib/db',()=>({db:{appointment:{findMany:async()=>[

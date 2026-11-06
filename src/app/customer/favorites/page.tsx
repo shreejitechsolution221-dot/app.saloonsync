@@ -19,7 +19,7 @@ export default function CustomerFavoritesPage() {
 
   const loadFavorites = () => {
     try {
-      const favs: unknown = JSON.parse(localStorage.getItem('glowdesk_fav_salons') || '[]');
+      const favs: unknown = JSON.parse(localStorage.getItem('saloonsync_fav_salons') || '[]');
       setFavoriteSalonIds(Array.isArray(favs) ? favs.filter((id): id is string => typeof id === 'string') : []);
     } catch {
       setFavoriteSalonIds([]);
@@ -29,8 +29,8 @@ export default function CustomerFavoritesPage() {
   useEffect(() => {
     loadFavorites();
     const handleFavChange = () => loadFavorites();
-    window.addEventListener('glowdesk_favorites_changed', handleFavChange);
-    return () => window.removeEventListener('glowdesk_favorites_changed', handleFavChange);
+    window.addEventListener('saloonsync_favorites_changed', handleFavChange);
+    return () => window.removeEventListener('saloonsync_favorites_changed', handleFavChange);
   }, []);
 
   useEffect(() => {

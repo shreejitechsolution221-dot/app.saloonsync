@@ -14,6 +14,7 @@ import { requireCustomerUser } from '@/lib/authorization/server';
 import { emailPolicyError, assertSignupEmail } from '@/lib/email/signup-policy';
 import { registeredEmailExists } from '@/lib/auth/registered-email';
 import { getClientIp, limitLogin, limitRegister } from './rate-limit';
+import { logAuthFailure, type AuthStage } from '@/lib/auth/failure-log';
 
 export type FormState = { error?: string; message?: string; fields?: Record<string, string[]>; link?: string; email?: string; sentAt?: number };
 const unavailable = { error: 'Unable to complete this request. Check your details or try again later.' };
@@ -21,16 +22,20 @@ export async function authenticate(_state: FormState, form: FormData): Promise<F
   const parsed = loginSchema.safeParse(Object.fromEntries(form));
   if (!parsed.success) return { error: 'Enter your email and password.', fields: z.flattenError(parsed.error).fieldErrors };
   const portal = portalOf(form.get('portal'));
+  let stage: AuthStage = 'origin';
   try {
     await requireSameOrigin();
+    stage = 'rate-limit';
     const clientIp = await getClientIp();
     const loginAllowed = await limitLogin(clientIp, parsed.data.email);
     if (!loginAllowed) return { error: 'Too many attempts, try again in a minute' };
+    stage = 'provider';
     const client = await supabase();
     const authStarted = performance.now();
     const { data, error } = await client.auth.signInWithPassword(parsed.data);
     if (process.env.DB_TIMING_DEBUG === '1') console.info(JSON.stringify({ event: 'login.provider_timing', durationMs: performance.now() - authStarted }));
     if (error) return { error: 'Unable to sign in. Check your details and verify your email, or reset your password.' };
+    stage = 'authorization';
     const store = await cookies();
     const invitationToken = store.get('invitation')?.value;
     const invitation = invitationToken && data.user?.email ? {
@@ -39,8 +44,9 @@ export async function authenticate(_state: FormState, form: FormData): Promise<F
     if (!data.user || !await authorizePortalSession(client, data.user.id, portal, invitation)) {
       return { error: `This account cannot access the ${portal === 'salon' ? 'salon team' : portal} portal. Use the login for your account role.` };
     }
+    stage = 'session';
     store.delete('recovery_user'); store.delete('login_otp'); store.delete('workspace');
-  } catch { return unavailable; }
+  } catch (error) { logAuthFailure(stage, error); return unavailable; }
   redirect(portalDestination(form.get('next'), portal));
 }
 export async function register(_state: FormState, form: FormData): Promise<FormState> {

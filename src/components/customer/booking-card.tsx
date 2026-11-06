@@ -32,7 +32,7 @@ export function BookingCard({
     timeStyle: 'short',
   });
 
-  const referenceCode = booking.recurrenceKey || `GD-${booking.id.slice(0, 8).toUpperCase()}`;
+  const referenceCode = booking.recurrenceKey || `SS-${booking.id.slice(0, 8).toUpperCase()}`;
 
   const statusMap: Record<CustomerBookingItem['status'], { label: string; badgeClass: string; step: number }> = {
     pending: { label: 'Pending Approval', badgeClass: 'status-pending', step: 1 },
@@ -109,7 +109,7 @@ export function BookingCard({
       'BEGIN:VCALENDAR',
       'VERSION:2.0',
       'BEGIN:VEVENT',
-      `UID:${booking.id}@glowdesk.com`,
+      `UID:${booking.id}@saloonsync.app`,
       `DTSTAMP:${formatIcs(new Date())}`,
       `DTSTART:${formatIcs(start)}`,
       `DTEND:${formatIcs(end)}`,

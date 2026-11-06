@@ -6,13 +6,14 @@ import { Pool } from 'pg';
 import { attachDatabasePool } from '@vercel/functions';
 import {databaseOperation} from '@/lib/performance/database-timing';
 import {createHash} from 'node:crypto';
+import { runtimeDatabaseUrl } from '@/lib/performance/database-url';
 const globalDb = globalThis as unknown as { prisma?: PrismaClient; prismaPool?: Pool; prismaFields?: string; prismaConnection?:string };
 // Dev bundles can have different constructor identities for the same schema.
 // Reuse those clients, but replace one generated before a field was added/removed.
 const generatedFields = JSON.stringify(Object.entries(Prisma).filter(([name]) => name.endsWith('ScalarFieldEnum')).sort(([a], [b]) => a.localeCompare(b)));
 // A region/credential change must also invalidate the dev singleton. The digest
 // stays in memory and is never logged or sent to a browser.
-const activeDatabaseUrl = process.env.DATABASE_URL || process.env.POSTGRES_PRISMA_URL || process.env.POSTGRES_URL || '';
+const activeDatabaseUrl = runtimeDatabaseUrl();
 const connectionIdentity=createHash('sha256').update(activeDatabaseUrl).digest('hex');
 const cached = globalDb.prismaFields === generatedFields&&globalDb.prismaConnection===connectionIdentity ? globalDb.prisma : undefined;
 // Keep one already-open connection between local page visits. This does not

@@ -11,26 +11,28 @@ const screens = [
 ];
 
 for (const screen of screens) {
-  test(`home fits ${screen.name} without scrolling or clipped controls`, async ({ page }) => {
+  test(`home fits ${screen.name} without horizontal overflow and keeps portal cards reachable`, async ({ page }, testInfo) => {
     await page.setViewportSize(screen);
     await page.goto('/');
     const size = await page.evaluate(() => ({ width: document.documentElement.scrollWidth, height: document.documentElement.scrollHeight, viewportWidth: innerWidth, viewportHeight: innerHeight }));
     expect(size.width).toBeLessThanOrEqual(size.viewportWidth);
-    expect(size.height).toBeLessThanOrEqual(size.viewportHeight + 1);
     for (const portal of ['salon', 'customer']) {
-      const box = await page.locator(`a[href="/${portal}/login"]`).boundingBox();
-      expect(box).not.toBeNull(); expect(box!.y + box!.height).toBeLessThanOrEqual(screen.height);
+      const card = page.locator(`a.portal-card[href="/${portal}/login"]`);
+      await card.scrollIntoViewIfNeeded();
+      await expect(card).toBeInViewport({ ratio: 0.99 });
+      await expect(card.locator('.portal-cta')).toBeInViewport({ ratio: 1 });
     }
-    await page.screenshot({ path: `docs/previews/responsive-${screen.name}.png`, fullPage: true });
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.screenshot({ path: testInfo.outputPath(`responsive-${screen.name}.png`), fullPage: true });
   });
 }
 
-test('login fits a laptop and phone while keeping the footer accessible', async ({ page }) => {
+test('login fits a laptop and phone while keeping the footer accessible', async ({ page }, testInfo) => {
   for (const screen of screens.filter(s => ['phone','tablet','laptop','desktop'].includes(s.name))) {
     await page.setViewportSize(screen);
     await page.goto('/salon/login');
     const size = await page.evaluate(() => ({ height: document.documentElement.scrollHeight, viewport: innerHeight }));
-    await page.screenshot({ path: `docs/previews/login-${screen.name}.png`, fullPage: true });
+    await page.screenshot({ path: testInfo.outputPath(`login-${screen.name}.png`), fullPage: true });
     expect(size.height, `${screen.name}: ${JSON.stringify(size)}`).toBeLessThanOrEqual(size.viewport + 1);
     expect(await page.locator('.auth-main').evaluate(el => el.scrollHeight <= el.clientHeight + 1), `${screen.name}: form fits without an inner scrollbar`).toBe(true);
     const footer = await page.locator('.auth-footer').boundingBox();

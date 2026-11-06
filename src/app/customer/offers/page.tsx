@@ -29,7 +29,7 @@ export default async function CustomerOffersPage() {
         <div className="loyalty-card-bg-glow" />
         <div className="loyalty-card-inner">
           <div className="loyalty-tier-badge">
-            <CustomerIcon name="sparkles" size={14} /> GlowDesk Rewards Member
+            <CustomerIcon name="sparkles" size={14} /> SaloonSync Rewards Member
           </div>
           <div className="loyalty-balance-row">
             <div>

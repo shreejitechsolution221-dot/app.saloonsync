@@ -40,7 +40,7 @@ export function CustomerShell({
           <div className="customer-brand-area">
             <Wordmark />
             <span className="customer-portal-badge">
-              <span className="sparkle">✧</span> GlowDesk Client
+              <span className="sparkle">✧</span> SaloonSync Client
             </span>
           </div>
 
@@ -151,7 +151,7 @@ export function CustomerShell({
       {/* Footer */}
       <footer className="customer-footer">
         <div className="customer-footer-inner">
-          <p>© {new Date().getFullYear()} Saloonsync · GlowDesk Client Experience</p>
+          <p>© {new Date().getFullYear()} Saloonsync · SaloonSync Client Experience</p>
           <div className="customer-footer-links">
             <Link href="/customer/support">Help & FAQ</Link>
             <Link href="/customer/offers">Offers</Link>

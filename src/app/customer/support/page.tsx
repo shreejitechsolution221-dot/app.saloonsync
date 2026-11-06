@@ -21,7 +21,7 @@ export default async function CustomerSupportPage() {
   const faqs = [
     {
       q: 'Do I need to pay online when booking an appointment?',
-      a: 'No! GlowDesk guarantees zero online prepayment. You never need to enter card details to reserve an appointment. All payments occur in person at the salon reception upon completing your service, using Cash, UPI (GPay/PhonePe/Paytm), or Credit/Debit Card.',
+      a: 'No! SaloonSync guarantees zero online prepayment. You never need to enter card details to reserve an appointment. All payments occur in person at the salon reception upon completing your service, using Cash, UPI (GPay/PhonePe/Paytm), or Credit/Debit Card.',
     },
     {
       q: 'What is the salon cancellation and rescheduling policy?',

@@ -11,6 +11,7 @@ import { requireSameOrigin, rateLimit } from '@/lib/security';
 import { DomainError } from '@/lib/operations/errors';
 import { saveError } from '@/lib/operations/save-error';
 import type { FormState } from './auth-actions';
+import { platformFeatureEnabled } from '@/lib/platform/features';
 
 const bookInput = z.object({
   salonId: z.string().uuid(),
@@ -49,6 +50,7 @@ export async function bookCustomerAppointment(_: FormState, formData: FormData):
     let bookingRef = '';
 
     await db.$transaction(async (tx) => {
+      if (!await platformFeatureEnabled(parsed.salonId, 'online_booking', tx)) throw new DomainError('Online booking is currently unavailable for this salon. Please contact the salon.');
       // 1. Verify Salon & Branch
       const [salon, branch] = await Promise.all([
         tx.salon.findFirst({ where: { id: parsed.salonId, status: 'active' }, select: { id: true, name: true } }),
@@ -116,7 +118,7 @@ export async function bookCustomerAppointment(_: FormState, formData: FormData):
 
       // 6. Create the Appointment
       const appointmentId = randomUUID();
-      bookingRef = `GD-${appointmentId.slice(0, 8).toUpperCase()}`;
+      bookingRef = `SS-${appointmentId.slice(0, 8).toUpperCase()}`;
 
       await tx.appointment.create({
         data: {

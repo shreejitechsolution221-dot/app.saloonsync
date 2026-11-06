@@ -4,12 +4,9 @@ import { createHash } from 'node:crypto';
 import { db } from './db';
 import { redis } from '@/server/redis';
 import { DomainError } from '@/lib/operations/errors';
+import { applicationOrigin } from '@/lib/auth/origin';
 export function appOrigin() {
-  const value = process.env.APP_ORIGIN;
-  if (!value) throw new Error('APP_ORIGIN is required.');
-  const url = new URL(value);
-  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && url.hostname === 'localhost')) throw new Error('Invalid application origin.');
-  return url.origin;
+  return applicationOrigin(process.env.APP_ORIGIN);
 }
 export async function requireSameOrigin() {
   const h = await headers();

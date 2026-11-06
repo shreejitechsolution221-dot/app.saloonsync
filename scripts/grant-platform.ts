@@ -3,8 +3,8 @@ import { z } from 'zod';
 import { PrismaClient } from '../src/generated/prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { platformPrivileges } from '../src/lib/authorization/platform-policy';
-config({ path: '.env.migrations.local', quiet: true });
-config({ path: '.env.local', quiet: true }); config({ quiet: true });
+config({ path: '.env.local', quiet: true });
+config({ path: '.env.migrations.local', quiet: true }); config({ quiet: true });
 const [userId, mode, ...reasonWords] = process.argv.slice(2);
 const reason = reasonWords.join(' ').trim();
 if (!z.uuid().safeParse(userId).success || !['grant', 'revoke'].includes(mode) || reason.length < 10 || reason.length > 200) {

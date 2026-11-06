@@ -15,7 +15,7 @@ export function FavoriteButton({
   className?: string;
 }) {
   const [isFavorite, setIsFavorite] = useState(false);
-  const key = `glowdesk_fav_${type}s`;
+  const key = `saloonsync_fav_${type}s`;
 
   useEffect(() => {
     try {
@@ -41,7 +41,7 @@ export function FavoriteButton({
         setIsFavorite(true);
       }
       localStorage.setItem(key, JSON.stringify(updated));
-      window.dispatchEvent(new Event('glowdesk_favorites_changed'));
+      window.dispatchEvent(new Event('saloonsync_favorites_changed'));
     } catch {
       // Fallback
     }

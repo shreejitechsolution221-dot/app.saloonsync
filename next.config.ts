@@ -4,6 +4,7 @@ const config: NextConfig = {
   // isolated from a running dev app, with an optional local override.
   distDir: process.env.VERCEL === '1' ? '.next' : process.env.NEXT_DIST_DIR || (process.env.NODE_ENV==='production'?'.next-production':'.next'),
   poweredByHeader: false,
+  outputFileTracingIncludes: { '/*': ['./certificates/supabase-ca.crt'] },
   experimental: {serverActions: {bodySizeLimit: '6mb'}},
   async headers() {
     return [

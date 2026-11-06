@@ -29,6 +29,32 @@ release environment before deploying code that requires new schema changes.
 Migrations deliberately do not run during every preview build. Budget
 `DB_POOL_MAX` across all function instances and workers.
 
+For Supabase, direct `db.<project>.supabase.co` endpoints may require IPv6.
+On Vercel, the runtime uses an integration-provided `POSTGRES_PRISMA_URL` or
+`POSTGRES_URL` pooler instead of a direct `DATABASE_URL` only when the pooler
+matches the same project, database name, and database role. Otherwise it retains
+the explicit URL; configure that project's Supavisor pooler URL yourself rather
+than pointing authentication at a different database. Local URLs are unchanged.
+If the integration also supplies direct URLs, set `SUPABASE_POOLER_HOST` to the
+exact hostname from the project's Connect → Transaction pooler panel. On Vercel
+only, this converts the direct URL in memory to that pooler on port 6543, uses
+the same project, database and credentials, and enables verified TLS. No database
+password needs to be copied or exposed. Only Supabase pooler domains are accepted.
+The public CA in `certificates/supabase-ca.crt` is included in server functions
+through `outputFileTracingIncludes`; keep it in the repository and do not disable
+certificate verification when deploying. The certificate's fingerprint and
+expiry are documented in `certificates/README.md`.
+
+For hosted sign-in failures, verify `APP_ORIGIN` is the exact HTTPS site origin
+(for this project, `https://app-saloonsync.vercel.app`), then redeploy; existing
+deployments retain their previous environment values. Never bypass the origin
+check. `/api/v1/ready` must return 200 before database-backed role checks can work.
+Read Vercel logs for `auth.dependency_failed`: its stage and bounded error codes
+identify origin, provider, or database failures without logging credentials or
+SQL. Database failures are classified into fixed reasons such as network, TLS,
+missing tables, and permissions. Apply missing migrations through the trusted
+release workflow, and keep database passwords and connection strings out of chat.
+
 The existing redirects are server-side and authorization remains fresh. Shared
 Redis data must never replace membership or permission checks. Public routes
 already avoid unnecessary session refreshes. Layout and customer queries use

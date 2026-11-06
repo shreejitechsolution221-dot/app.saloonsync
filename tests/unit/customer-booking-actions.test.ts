@@ -1,6 +1,7 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 
 const m = vi.hoisted(() => ({
+  feature: vi.fn(),
   user: { id: '11111111-1111-4111-8111-111111111111', displayName: 'Jane Doe', email: 'jane@example.com', mobileNumber: '+919876543210' },
   origin: vi.fn(),
   availability: vi.fn(),
@@ -26,6 +27,7 @@ const m = vi.hoisted(() => ({
 
 vi.mock('@/lib/customer/queries', () => ({ getCustomerBookingAvailability: m.availability }));
 vi.mock('@/lib/customer/cache', () => ({ invalidateCustomer: m.invalidate }));
+vi.mock('@/lib/platform/features', () => ({ platformFeatureEnabled: m.feature }));
 vi.mock('@/lib/authorization/server', () => ({
   requireCustomerUser: async () => m.user,
 }));
@@ -95,6 +97,7 @@ function validBookForm() {
 }
 
 beforeEach(() => {
+  m.feature.mockResolvedValue(true);
   m.availability.mockImplementation(async (_salon: string, _branch: string, _duration: number, _staff: string, date: string) => {
     const startsAt = new Date(Date.now() + 86400000);
     startsAt.setUTCSeconds(0, 0);
@@ -132,7 +135,7 @@ beforeEach(() => {
 it('successfully books a customer appointment with server-side validation and audit log', async () => {
   const res = await bookCustomerAppointment({}, validBookForm());
   expect(res.error).toBeUndefined();
-  expect(res.bookingReference).toMatch(/^GD-[A-Z0-9]{8}$/);
+  expect(res.bookingReference).toMatch(/^SS-[A-Z0-9]{8}$/);
   expect(m.appointmentCreate).toHaveBeenCalledWith({
     data: expect.objectContaining({
       salonId,
@@ -299,4 +302,10 @@ it('rejects booking without available staff and does not invalidate cached data'
 it('invalidates only the authenticated customer after a successful booking', async () => {
   await bookCustomerAppointment({}, validBookForm());
   expect(m.invalidate).toHaveBeenCalledWith(m.user.id);
+});
+it('enforces the platform online-booking rollout before creating a visit', async () => {
+  m.feature.mockResolvedValueOnce(false);
+  const result = await bookCustomerAppointment({}, validBookForm());
+  expect(result.error).toContain('Online booking is currently unavailable');
+  expect(m.appointmentCreate).not.toHaveBeenCalled(); expect(m.invalidate).not.toHaveBeenCalled();
 });

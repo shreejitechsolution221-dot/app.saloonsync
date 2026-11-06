@@ -1,10 +1,10 @@
 import { test, expect } from '@playwright/test';
 test('home shows salon and customer access without exposing platform administration', async ({ page }, testInfo) => {
   await page.goto('/'); await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
-  for (const portal of ['salon', 'customer']) await expect(page.locator(`a[href="/${portal}/login"]`)).toBeVisible();
+  for (const portal of ['salon', 'customer']) await expect(page.locator(`a.portal-card[href="/${portal}/login"]`)).toBeVisible();
   await expect(page.locator('a[href^="/platform"]')).toHaveCount(0);
   await expect(page.getByText(/administer the platform/i)).toHaveCount(0);
-  await page.screenshot({ path: `docs/previews/home-${testInfo.project.name}.png`, fullPage: true });
+  await page.screenshot({ path: testInfo.outputPath(`home-${testInfo.project.name}.png`), fullPage: true });
 });
 test('public authentication pages have no platform navigation', async ({ page }) => {
   for (const path of ['/salon/login', '/customer/login', '/salon/register', '/customer/register', '/auth/forgot-password']) {
@@ -28,12 +28,16 @@ for (const [portal, title] of [['salon', 'Run your salon.'], ['customer', 'Plan 
     await expect(page.locator('#password')).toHaveAttribute('type', 'text');
     await page.getByRole('button', { name: 'Hide password', exact: true }).click();
     await page.getByLabel('Email address').focus(); await page.keyboard.press('Tab');
+    if (portal !== 'platform') {
+      await expect(page.getByRole('radio', { name: 'Use password', exact: true })).toBeFocused();
+      await page.keyboard.press('Tab');
+    }
     await expect(page.getByRole('link', { name: 'Forgot password?' })).toBeFocused();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     if (portal === 'platform') await expect(page.getByRole('link', { name: /create.*account/i })).toHaveCount(0);
     await page.getByLabel('Email address').fill('');
     await page.getByLabel('Password', { exact: true }).fill('');
-    await page.screenshot({ path: `docs/previews/${portal}-${testInfo.project.name}.png`, fullPage: true });
+    await page.screenshot({ path: testInfo.outputPath(`${portal}-${testInfo.project.name}.png`), fullPage: true });
   });
 }
 test('registration requires legal configuration and mandatory consent', async ({ page }) => {
@@ -67,5 +71,6 @@ test('invitation token is removed from the address and held in an HttpOnly cooki
   expect(cookie?.httpOnly).toBe(true); expect(cookie?.value).toBe(token);
 });
 test('anonymous protected dashboards return to login', async ({ page }) => {
-  for (const portal of ['salon', 'customer', 'platform']) { await page.goto(`/${portal}`); await expect(page).toHaveURL(new RegExp(`/${portal}/login$`)); }
+  for (const portal of ['salon', 'platform']) { await page.goto(`/${portal}`); await expect(page).toHaveURL(new RegExp(`/${portal}/login$`)); }
+  await page.goto('/customer/bookings'); await expect(page).toHaveURL(/\/customer\/login$/);
 });

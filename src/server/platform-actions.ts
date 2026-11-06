@@ -32,13 +32,13 @@ export async function saveSubscription(_state: FormState, form: FormData): Promi
       await tx.auditEvent.create({ data: { actorUserId: user.id, action: 'platform.subscription.updated', targetType: 'SalonSubscription', targetId: subscription.id, outcome: 'allowed', metadata: { status: input.status, mode: 'manual-record' } } });
     });
     await invalidateSalonLayout(input.salonId);
-    revalidatePath('/platform');
+    revalidatePath('/platform', 'layout');
     return { message: 'Subscription record saved. No payment or billing-provider changes were made.' };
   } catch { return { error: 'Unable to save. Check your platform permissions, or reload if another operator changed this record.' }; }
 }
 
 export async function manageOperator(_state: FormState, form: FormData): Promise<FormState> {
-  const parsed = z.object({ userId: z.uuid(), role: z.enum(['admin', 'manager', 'revoked']) }).safeParse(Object.fromEntries(form));
+  const parsed = z.object({ userId: z.uuid(), role: z.enum(['admin', 'manager', 'operations', 'support', 'billing', 'security', 'revoked']) }).safeParse(Object.fromEntries(form));
   if (!parsed.success) return { error: 'Enter an existing user UUID and a valid platform role.' };
   try {
     await requireSameOrigin();
@@ -66,7 +66,7 @@ export async function manageOperator(_state: FormState, form: FormData): Promise
       }
       await tx.auditEvent.create({ data: { actorUserId: actor.id, action: 'platform.operator.updated', targetType: 'User', targetId: target.id, outcome: 'allowed', metadata: { platformRole: parsed.data.role } } });
     });
-    revalidatePath('/platform');
+    revalidatePath('/platform', 'layout');
     return { message: 'Platform access updated. Salon memberships and customer access are unchanged.' };
   } catch { return { error: 'Unable to update platform access. Check the user UUID and your permissions. The last platform administrator cannot be removed.' }; }
 }

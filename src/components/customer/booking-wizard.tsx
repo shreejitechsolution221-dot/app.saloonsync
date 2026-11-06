@@ -157,9 +157,9 @@ export function BookingWizard({
     const icsContent = [
       'BEGIN:VCALENDAR',
       'VERSION:2.0',
-      'PRODID:-//GlowDesk//Customer Booking//EN',
+      'PRODID:-//SaloonSync//Customer Booking//EN',
       'BEGIN:VEVENT',
-      `UID:${confirmedReference || 'GD-APPT'}@glowdesk.com`,
+      `UID:${confirmedReference || 'SS-APPT'}@saloonsync.app`,
       `DTSTAMP:${formatIcsTime(new Date())}`,
       `DTSTART:${formatIcsTime(start)}`,
       `DTEND:${formatIcsTime(end)}`,
@@ -174,7 +174,7 @@ export function BookingWizard({
     const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
     const link = document.createElement('a');
     link.href = window.URL.createObjectURL(blob);
-    link.setAttribute('download', `GlowDesk-Booking-${confirmedReference || 'Visit'}.ics`);
+    link.setAttribute('download', `SaloonSync-Booking-${confirmedReference || 'Visit'}.ics`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -507,7 +507,7 @@ export function BookingWizard({
                   Please sign in to secure this booking
                 </p>
                 <p style={{ margin: '0 0 0.75rem', fontSize: '0.875rem', color: '#831843' }}>
-                  Your appointment confirmation and reference code will be linked to your GlowDesk account.
+                  Your appointment confirmation and reference code will be linked to your SaloonSync account.
                 </p>
                 <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                   <Link
@@ -530,7 +530,7 @@ export function BookingWizard({
               <div className="field">
                 <label>Full Name</label>
                 <input type="text" value={customerProfile.displayName} readOnly className="read-only-field" />
-                <span className="hint">Linked to your GlowDesk client account</span>
+                <span className="hint">Linked to your SaloonSync client account</span>
               </div>
             )}
 

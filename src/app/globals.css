@@ -134,7 +134,7 @@
 @media(max-width:880px){.home-features{grid-template-columns:1fr;gap:16px}}
 @media(max-width:760px){
   .home{padding:20px;gap:18px}
-  .home-header{flex-direction:row}
+  .home-header{flex-direction:row;flex-wrap:wrap;row-gap:12px}
   .home-header-badge{display:none}
   .portal-grid{grid-template-columns:1fr}
   .portal-card{min-height:0;padding:18px 20px}
@@ -1216,7 +1216,7 @@
 
 
 /* ==========================================================================
-   GLOWDESK CUSTOMER BOOKING EXPERIENCE STYLES
+   SALOONSYNC CUSTOMER BOOKING EXPERIENCE STYLES
    ========================================================================== */
 
 .customer-shell {
